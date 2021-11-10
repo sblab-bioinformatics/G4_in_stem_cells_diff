@@ -1,0 +1,3518 @@
+---
+title: "Additional processing G4 data"
+output: html_document
+author: Angela Simeone
+---
+
+
+G4 structures have been profiled in a complex system: ESC cells and 2 cell types derived from ESCs that possess 2 different differentation steps (Neuro crest -CNCC - and neural stem cells). 
+
+Katie's has also profiled the transcriptome of those cells. 
+
+Epigenetic profiles and other transcription factor chip-seq data used here for comparative analysis have been previously reported by other lab.
+
+
+## Data processing and integration
+
+Consensus voting strategy:
+* 2 out 3 technical rep --> produce consensus by biorep
+* 2 out 3 bio rep --> produce consensus by cell type
+
+
+Create consensus
+```{bash, eval = F}
+cd /stem_cells//broad
+mkdir scenario1_multi2
+## == SCENARIO 1 ==
+cells=(ESC NSC CNCC)
+for c in ${cells[@]}
+do
+echo $c
+multi2_files=`ls $c*multi2.bed`
+multiIntersectBed -i $multi2_files | awk '{if ($4>=2) print $0}' | sortBed -i - | mergeBed -i - > ./scenario1_multi2/${c}.bio2out3.bed
+done
+
+
+
+##== summary of file lengths ==
+#    9456 ./scenario1_multi2/CNCC.bio2out3.bed
+#   17950 ./scenario1_multi2/ESC.bio2out3.bed
+#    4436 ./scenario1_multi2/NSC.bio2out3.bed
+```
+
+Fold enrichment analysis for each individual cell type
+
+```{bash, eval = F}
+# define annotations to run fold change enrichments 
+
+scenario=(scenario1_multi2)
+
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+
+#genomic_annotation=genomic_regions_UCSC_hg38_igenomes.bed6.bed
+genomic_annotation=annotations_genomic_regions_gencode_v28.anno.bed
+repetitive_annotations=repeatMasker_hg38.elements_no.anno.bed
+
+ESC_anno=Rada_Iglesias_lifted_hg38.bed
+CNCC_anno=CNCC_annotations_hg38_no_.bed
+NEC_anno=NEC_GSE24447_annotations_hg38_no_.bed
+NSC_anno=encodeH1_histone_released_H3histMark_hg38_no_.bed
+
+#annotations derived from HiC paper Freire_Pritchett
+FP_CRUs_anno=PCRUs_clusters.anno.hg38_no_.bed
+FP_PIR_anno=PIR.anno.hg38_no_.bed
+FP_PIR_bait_anno=PIR_bait.anno.hg38_no_.bed
+FP_PIR_FALSE_FALSE_anno=PIR.FALSE_FALSE.anno.hg38_no_.bed
+FP_PIR_FALSE_TRUE_anno=PIR.FALSE_TRUE.anno.hg38_no_.bed
+FP_PIR_TRUE_FALSE_anno=PIR.TRUE_FALSE.anno.hg38_no_.bed
+
+annotation_list1=($genomic_annotation $repetitive_annotations $ESC_anno $NSC_anno $CNCC_anno $FP_CRUs_anno $FP_PIR_anno $FP_PIR_bait_anno $FP_PIR_FALSE_FALSE_anno $FP_PIR_FALSE_TRUE_anno $FP_PIR_TRUE_FALSE_anno)
+
+annotation_list1=($genomic_annotation)
+
+cd ~/Data/Katie_high_level_analysis_Oct2019
+# check overlap in terms of counts and fractio of peaks
+for case in ${scenario[@]}
+do
+  cd $case
+  # == check overlap (counts and fraction)
+  mkdir intervene_output
+  sbatch --mem 12G --wrap "intervene pairwise -i ./*bed --type genomic  --compute count --htype pie --filenames --output ./intervene_output"
+  sbatch --mem 12G --wrap "intervene pairwise -i ./*bed --type genomic  --compute frac --htype pie --filenames --output ./intervene_output"
+  cd ..
+done
+  
+
+# for each scenario generate common and specific bed_files from pairwise intersection
+cd ~/Data/Katie_high_level_analysis_Oct2019
+scenario=(scenario1_multi2)
+for case in ${scenario[@]}
+do
+  cd ./$case
+  esc=`ls ESC*.bed`
+  nsc=`ls NSC*.bed`
+  cncc=`ls CNCC*.bed`
+  mkdir bed_intersections_common
+  
+  sbatch --mem 6G --wrap "intersectBed -a $esc -b $nsc -v | sort | uniq > ./bed_intersections_common/specific_ESC_vs_NSC.bed"
+  sbatch --mem 6G --wrap "intersectBed -b $esc -a $nsc -v | sort | uniq > ./bed_intersections_common/specific_NSC_vs_ESC.bed"
+  
+  sbatch --mem 6G --wrap "intersectBed -a $esc -b $cncc -v | sort | uniq > ./bed_intersections_common/specific_ESC_vs_CNCC.bed"
+  sbatch --mem 6G --wrap "intersectBed -b $esc -a $cncc -v | sort | uniq > ./bed_intersections_common/specific_CNCC_vs_ESC.bed"
+  
+  sbatch --mem 6G --wrap "intersectBed -a $nsc -b $cncc -v | sort | uniq > ./bed_intersections_common/specific_NSC_vs_CNCC.bed"
+  sbatch --mem 6G --wrap "intersectBed -b $nsc -a $cncc -v | sort | uniq > ./bed_intersections_common/specific_CNCC_vs_NSC.bed"
+  
+  #common sets from both sides
+  sbatch --mem 6G --wrap "intersectBed -a $esc -b $nsc -wa | sort | uniq > ./bed_intersections_common/common_ESC_vs_NSC.bed"
+  sbatch --mem 6G --wrap "intersectBed -a $esc -b $nsc | sortBed -i - | mergeBed -i -> ./bed_intersections_common/common_ESC_vs_NSC.strict.merged.bed"
+  sbatch --mem 6G --wrap "intersectBed -b $esc -a $nsc -wa | sort | uniq > ./bed_intersections_common/common_NSC_vs_ESC.bed"
+  
+  
+  sbatch --mem 6G --wrap "intersectBed -a $esc -b $cncc -wa | sort | uniq > ./bed_intersections_common/common_ESC_vs_CNCC.bed"
+  sbatch --mem 6G --wrap "intersectBed -a $esc -b $cncc| sortBed -i - | mergeBed -i -> ./bed_intersections_common/common_ESC_vs_CNCC.strict.merged.bed"
+  sbatch --mem 6G --wrap "intersectBed -b $esc -a $cncc -wa | sort | uniq > ./bed_intersections_common/common_CNCC_vs_ESC.bed"
+  
+  sbatch --mem 6G --wrap "intersectBed -a $nsc -b $cncc -wa | sort | uniq > ./bed_intersections_common/common_NSC_vs_CNCC.bed"
+  sbatch --mem 6G --wrap "intersectBed -a $nsc -b $cncc| sortBed -i - | mergeBed -i -> ./bed_intersections_common/common_NSC_vs_CNCC.strict.merged.bed"
+  sbatch --mem 6G --wrap "intersectBed -b $nsc -a $cncc -wa | sort | uniq > ./bed_intersections_common/common_CNCC_vs_NSC.bed"
+  
+  cd ..
+done
+```
+
+
+Fold enrichments of G4 peaks
+```{bash, eval = F}
+  
+# perform fold enrichmeent analysis on any bed file in each subfolder
+cd ~/Data/Katie_high_level_analysis_Oct2019
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+scenario=(scenario1_multi2 )
+genomic_annotation=annotations_genomic_regions_gencode_v28.anno.bed
+annotation_list1=($genomic_annotation)
+#scenario=(scenario3_multi2_extended_1kb)
+for case in ${scenario[@]}
+do
+  cd ./$case
+  # run gat analysis on full bed files 
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ${file%%.bed}_${anno%%.bed}.dat -t 4"
+      echo ${file%%.bed}_${anno%%.bed}.dat
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+      
+    #sbatch --mem 6G --wrap "$cmd_gat"
+    done
+  done
+
+  #run the enrichment for subsets (common and specific ones)
+  cd ./bed_intersections_common
+  pwd
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_list1[@]}
+    do
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ${file%%.bed}_${anno%%.bed}.dat -t 4"
+      echo ${file%%.bed}.${anno%%.bed}.dat
+      pwd
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+    #sbatch --mem 6G --wrap "$cmd_gat"
+    done
+  done
+  echo " ** == ** =="
+  cd ../..
+done
+  
+```
+
+
+Produce plots about peak sizes and overlaps
+
+```{R, eval = F}
+rm(list = ls())
+library(ggplot2)
+library(dplyr)
+library(VennDiagram)
+# setwd('/stem_cells/broad/scenario1_multi2')
+esc <- read.table(file='ESC.bio2out3.bed',stringsAsFactors = F, header = F)
+nsc <- read.table('NSC.bio2out3.bed',stringsAsFactors = F)
+cncc <- read.table('CNCC.bio2out3.bed',stringsAsFactors = F)
+
+
+
+stem_cells_df <- data.frame(cell_type=c(rep('1_ESC',length(esc$V1)),rep('2_NSC',length(nsc$V1)),rep('3_CNCC',length(cncc$V1))),
+                            peak_sizes=c(esc$V3-esc$V2,nsc$V3-nsc$V2,cncc$V3-cncc$V2))
+
+stem_colors=c('coral1','lightslateblue','mediumseagreen')
+pdf("./Peak_sizes.confirmedPeaks.pdf")
+stem_cells_df %>% ggplot(aes(y=peak_sizes,x=cell_type,fill=cell_type)) + geom_boxplot( outlier.size =  -1) + ylim(0,600)
+dev.off()
+
+pdf("./Peak_numbers.confirmedPeaks.pdf")
+stem_cells_df %>% ggplot(aes(cell_type,fill=cell_type)) + geom_bar(colour="black") 
+dev.off()
+
+boxplot(esc$V3-esc$V2,nsc$V3-nsc$V2,cncc$V3-cncc$V2, outline = F)
+
+# generate venn diagrams with different overlaps
+setwd('./intervene_output')
+matrix_counts <- read.table('Intervene_pairwise_count_matrix.txt',stringsAsFactors = F)
+set1_cncc <- matrix_counts[1,1]
+set2_esc <- matrix_counts[2,2]
+set3_nsc <- matrix_counts[3,3]
+set1_set2_common <- matrix_counts[1,2]
+set1_set3_common <- matrix_counts[1,3]
+set2_set3_common <- matrix_counts[2,3]
+
+
+pdf('../overlap_CNCC_ESC.pdf')
+grid.newpage()
+draw.pairwise.venn(set1_cncc,set2_esc,set1_set2_common,
+                   category=c("CNCC","ESC"),
+                   lty = rep("blank",2),
+                   fill = c("light blue", "red"), alpha = rep(0.5, 2),
+                 cat.pos = c(0,0), cat.dist = rep(0.025, 2))
+dev.off()
+
+pdf('../overlap_NSC_ESC.pdf')
+grid.newpage()
+draw.pairwise.venn(set3_nsc,set2_esc,set2_set3_common,
+                   category=c("NSC","ESC"),
+                   lty = rep("blank",2),
+                   fill = c("light green", "red"), alpha = rep(0.5, 2),
+                 cat.pos = c(0,0), cat.dist = rep(0.025, 2))
+dev.off()
+
+pdf('../overlap_NSC_CNCC.pdf')
+grid.newpage()
+draw.pairwise.venn(set3_nsc,set1_cncc,set1_set3_common,
+                   category=c("NSC","CNCC"),
+                   lty = rep("blank",2),
+                   fill = c("light green", "light blue"), alpha = rep(0.5, 2),
+                 cat.pos = c(0,0), cat.dist = rep(0.025, 2))
+dev.off()
+
+
+```
+
+
+
+
+### Prepare regions for differential binding analysis
+
+Create multi-cell merge of all 3 cell-type consensus and extract coverage at those regions in order to perform differential binding analysis
+
+```{bash, eval = F}
+# create the mergePeaks files for all scenatio. This is used then for differential binding analysis
+# for each scenario generate common and specific bed_files from pairwise intersection
+cd ~/Data/Katie_high_level_analysis_Oct2019
+scenario=(scenario1_multi2)
+for case in ${scenario[@]}
+do
+  cd ./$case
+  esc=`ls ESC*.bed`
+  nsc=`ls NSC*.bed`
+  cncc=`ls CNCC*.bed`
+  mkdir bed_merge_all
+  sbatch --mem 6G --wrap "cat $esc $nsc $cncc | sortBed -i - | mergeBed -i - > ./bed_merge_all/${scenario}.all_peaks_merged.bed"
+  cd ..
+done
+```
+
+Coverate at multi-cell merge
+
+```{bash, eval = F}
+Bam_repA=~/stem_cells/SLX-18496/aligned #.hg38.sort.markduplicates.bam
+Bam_repB=~/stem_cells/SLX-18495/aligned # markduplicates.bam #merged lanes
+Bam_repC=~/stem_cells/SLX-18355/aligned #.hg38.sort.markduplicates.bam
+
+#./peaks_coverages
+#./promoter_coverages
+
+#estimate coverages
+
+bam_folders=($Bam_repA $Bam_repB $Bam_repC)
+scenario=(scenario1_multi2)
+path_analysis=~/Data/Katie_high_level_analysis_Oct2019
+for case in ${scenario[@]}
+  do
+  cd $path_analysis/$case
+  bed_all_peaks=`ls $path_analysis/$case/bed_merge_all/*.all_peaks_merged.bed`
+  out_dir=$path_analysis/$case/bed_merge_all/coverage_peaks
+  mkdir $out_dir
+  echo $bed_all_peaks
+  for folder_bam in ${bam_folders[@]}
+    do
+    cd $folder_bam
+    pwd
+    for bam in `ls *.markduplicates.bam`
+      do
+      echo $bam
+      pwd
+      echo sbatch --mem 8G -o %j.log.out -e %j.log.err --wrap "bedtools coverage -a $bed_all_peaks -b $bam  -counts > $out_dir/${bam%%.bam}.union_bg4_peaks"
+      sbatch --mem 8G -o %j.log.out -e %j.log.err --wrap "bedtools coverage -a $bed_all_peaks -b $bam  -counts > $out_dir/${bam%%.bam}.union_bg4_peaks"
+      echo "   "
+      done
+  
+    done
+  
+  done
+```
+
+
+
+Differential binding analysis
+
+```{R, eval = F}
+
+## == fuctions  and packages ==
+library(dendextend)
+library(dplyr)
+library(ggdendro)
+library(ggplot2)
+tss_file <- '/Users/simeon01/Documents/genomes/hg38/gencode.v28.TSS.bed'
+source('/Users/simeon01/Documents/Karen/20190613_Karen_continue_pol2_G4_maps/G4_signal_DRB/function_to_export_tables.R')
+
+norm_sign_to_tot_map_reads <- function(matrix,list_stat5_mapped_reads){
+  Library_sizes <- c()
+  matrix_norm <- matrix
+  for (i in 1:dim(matrix)[2]){
+    print(i)
+    tmp_cond <- colnames(matrix)[i]
+    tmp_cond <- gsub('.union_bg4_peaks','',tmp_cond)
+    print(tmp_cond)
+    tmp_stat <- grep(substr(tmp_cond,1,20),list_stat5_mapped_reads,value = T)
+    tot_reads <- as.numeric(system(paste0('cat ',tmp_stat),intern = TRUE))
+    Library_sizes[i] <- tot_reads
+    matrix_norm[,i] <- matrix[,i]/tot_reads*1e6
+  }
+  names(Library_sizes) <- colnames(matrix)
+  NewList <- list("norm_cpm_M" = matrix_norm, "lib_size" = Library_sizes)
+  return(NewList)
+}
+
+#################################################
+# load data
+#################################################
+setwd("/stem_cells//broad/scenario1_multi2/coverage_peaks")
+list_files <- list.files(path = ".",pattern = '.union_bg4_peak')
+
+Matrix_cov <- matrix(ncol = length(list_files), nrow = 20713)
+for (i in 1:length(list_files)) {
+  temp <- read.table(list_files[i],stringsAsFactors = F)
+  Matrix_cov[,i] <- temp$V4
+  peaks_coordinates <- temp[,c(1,2,3)]
+}
+colnames(Matrix_cov) <-list_files
+colnames(Matrix_cov) <- gsub('.markduplicates.union_bg4_peaks','',list_files)
+
+rownames(Matrix_cov) <- paste(peaks_coordinates$V1,peaks_coordinates$V2,peaks_coordinates$V3,sep="_")
+
+# specific samples need to be removed
+colnames(Matrix_cov)[]
+
+Matrix_cov_selected <- Matrix_cov[,-c(33,37,39,40)]
+
+
+stat5_files <- list.files(path = ".", pattern = "stat5")
+norm_Matrix_cov_selected <- norm_sign_to_tot_map_reads(Matrix_cov_selected,stat5_files)
+
+
+## == clustering raw data == 
+
+# # clustering - row data
+pdf('hclust_raw_counts.pdf')
+h_Matrix_cov_selected <- hclust(dist(t(Matrix_cov_selected)),method="ward.D2")
+p <- ggdendrogram(h_Matrix_cov_selected,rotate=T) +  ggtitle('clustering - raw counts')
+print(p)
+dev.off()
+
+## == clustering - data norm to total number of reads == 
+pdf('hclust_RPM.pdf')
+h_norm_Matrix_cov_selected <- hclust(dist(t(norm_Matrix_cov_selected$norm_cpm_M)),method="ward.D2")
+p <- ggdendrogram(h_norm_Matrix_cov_selected,rotate=T) +  ggtitle('clustering - RPM')
+print(p)  
+dev.off()
+
+## == clustering - data norm to total number of reads -- NO INPUT == 
+pdf('hclust_RPM_no_input.pdf')
+h_norm_Matrix_cov_selected_noInput <- hclust(dist(t(norm_Matrix_cov_selected$norm_cpm_M[,-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))])),method="ward.D2")
+p <- ggdendrogram(h_norm_Matrix_cov_selected_noInput,rotate=T) +  ggtitle('clustering - RPM - no input')
+print(p)  
+dev.off()
+
+## == clustering - data norm to total number of reads -- NO INPUT == 
+pdf('hclust_RPM_no_input_excluding_low10percent.pdf')
+A <- norm_Matrix_cov_selected$norm_cpm_M[,-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+A_sum <- rowSums(A)
+hist(A_sum)
+summary(A_sum)
+quantile(A_sum, 0.1)
+A_selected <- A[A_sum<quantile(A_sum, 0.1),]
+h_A_selected <- hclust(dist(t(A_selected)),method="ward.D2")
+p <- ggdendrogram(h_A_selected,rotate=T) +  ggtitle('clustering - RPM - no input')
+plot(p)
+dev.off()
+
+pdf('hclust_RPM_no_input_excluding_NOlow10percent_NOTop10percent.pdf')
+A <- norm_Matrix_cov_selected$norm_cpm_M[,-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+A_sum <- rowSums(A)
+hist(A_sum)
+summary(A_sum)
+quantile(A_sum, 0.1)
+A_selected <- A[A_sum>quantile(A_sum, 0.1) & A_sum<quantile(A_sum, 0.9) ,]
+#A_selected <- A[A_sum>quantile(A_sum, 0.5) ,]
+h_A_selected <- hclust(dist(t(A_selected)),method="ward.D2")
+p <- ggdendrogram(h_A_selected,rotate=T) +  ggtitle('clustering - RPM - no input')
+plot(p)
+dev.off()
+
+
+#################################
+# Differential analysis
+#################################
+
+# in the differential analysis we will account for:
+# bio rep [4 different ones]
+# technical rep [3 tech rep]
+# condition [3 different cell lines]
+
+# create variables
+#A_selected <- A[A_sum<quantile(A_sum, 0.1),]
+#Counts_to_use_all <- A_selected
+Counts_to_use_all <- Matrix_cov_selected[,-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+colnames(Counts_to_use_all)
+conditions <- c(rep('CNCC',9),rep('ESC',9),rep('NSC',9))
+conditions
+# "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "NSC"  "NSC"  "NSC"  "NSC" 
+# [23] "NSC"  "NSC"  "NSC"  "NSC"  "NSC" 
+#      
+conditions <- factor(conditions) # there are 4 factors
+
+conditions <- relevel(conditions,ref="ESC") # relevel as reference base the condition no_TPL_1hr_no_dm6
+
+
+bio_rep <- rep(c(rep(1,3), rep(2,3), rep(3,3)),3)
+bio_rep <- factor(bio_rep)
+bio_rep
+#[1] 1 1 1 2 2 2 3 3 3 1 1 1 2 2 2 3 3 3 1 1 1 2 2 2 3 3 3
+#Levels: 1 2 3
+
+
+tec_rep <- rep(1:3,9)
+tec_rep <- factor(tec_rep)
+# lib_size: norm_Matrix_cov_selected$lib_size[-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+curr_lib_size <- norm_Matrix_cov_selected$lib_size[-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+design_blocking <- model.matrix(~ bio_rep + tec_rep + conditions)
+design <- model.matrix(~conditions)
+colnames(design_blocking)
+# [1]  "(Intercept)"    "bio_rep2"       "bio_rep3"       "tec_rep2"       "tec_rep3"       "conditionsCNCC" "conditionsNSC" 
+
+# create EdgeR object
+library(edgeR)
+y <- DGEList(counts = Counts_to_use_all, group= conditions)
+stopifnot(rownames(y$samples) == names(curr_lib_size))
+y$samples$lib.size<- curr_lib_size
+
+y <- calcNormFactors(y, method= 'none')
+y <- estimateDisp(y,design_blocking)
+y <- estimateGLMCommonDisp(y,design_blocking)
+y <- estimateGLMTagwiseDisp(y,design_blocking)
+
+
+# check MDS plot
+pdf('MDS_edger_mdsplot_stem_cells.pdf', 7, 7)
+ par(las= 1, cex=1.2)
+col_map <- conditions
+levels(col_map) <- 1:length(levels(col_map))
+col_map <- as.numeric(conditions)
+temp_rainbow <- rainbow(3)
+col_map_rainbow <- temp_rainbow[col_map]
+plotMDS(y,
+        #pch=c(0,3,0,3,0,3),
+        #xlim=c(-3,3), ylim= c(-0.5,0.5), 
+        xlim=c(-1.5,1.5), ylim= c(-1,0.7), 
+        #xaxp= c(-40, 40, 8),  yaxp= c(-10,10, 8),
+        labels= paste(y$samples$group,bio_rep, sep= '--'),
+        col=col_map_rainbow,
+        main= 'MDS plot ', cex= 0.7)
+grid()
+dev.off()
+
+pdf('MDS_edger_mdsplot_stem_cells_symb.pdf', 7, 7)
+ par(las= 1, cex=1.2)
+col_map <- conditions
+levels(col_map) <- 1:length(levels(col_map))
+col_map <- as.numeric(conditions)
+temp_rainbow <- rainbow(3)
+col_map_rainbow <- temp_rainbow[col_map]
+plotMDS(y,
+        pch=c(rep(0,9),rep(1,9),rep(3,9)),
+        #xlim=c(-3,3), ylim= c(-0.5,0.5), 
+        xlim=c(-1.5,1.5), ylim= c(-1,0.7), 
+        #xaxp= c(-40, 40, 8),  yaxp= c(-10,10, 8),
+        #labels= paste(y$samples$group,bio_rep, sep= '--'),
+        col=col_map_rainbow,
+        main= 'MDS plot ', cex= 0.7)
+
+grid()
+dev.off()
+
+pdf('PCA2_edger_mdsplot_stem_cells.pdf', 9, 7)
+pcaResult<-prcomp(t(y$counts))
+plot(pcaResult$x,
+     main= 'Principal components, counts',
+     xlab="PC1",
+     ylab="PC2",
+     #xlab= sprintf('PC1 (sd: %s%%)', round(100 * (pcaResult$sdev[1] / sum(pcaResult$sdev)))),
+     #ylab= sprintf('PC2 (sd: %s%%)', round(100 * (pcaResult$sdev[2] / sum(pcaResult$sdev)))),
+     type= 'n')
+text(x= pcaResult$x[,1], y= pcaResult$x[,2], labels= paste(y$samples$group,bio_rep, sep= '--'), cex= 0.9, 
+     #col= c(rep('#CCFF00FF',5),rep('#00FF66FF',5),rep('#FF0000FF',5)))
+     col = col_map_rainbow)
+dev.off()
+
+
+# fit the generalized linear model (quasi-likelihood negative binomial generalized log-linear model)
+fit <- glmQLFit(y, design_blocking)
+colnames(fit)
+# "(Intercept)"    "bio_rep2"       "bio_rep3"       "tec_rep2"       "tec_rep3"       "conditionsCNCC" "conditionsNSC" 
+
+## ==  CNCC vs ESC 
+N_condition <- 6
+
+colnames(fit)[N_condition]
+
+label_case <-  paste0(colnames(fit)[N_condition],"_vs_ESC")
+
+qlf.CNCC_vs_ESC <- glmQLFTest(fit, coef=N_condition) 
+
+de_pairing_CNCC_vs_ESC <- topTags(qlf.CNCC_vs_ESC, n= nrow(y$counts))$table
+
+write.table(de_pairing_CNCC_vs_ESC,file = paste0('EdgeRtable_differential_binding_analysis_',label_case,'.csv'), col.names = NA,sep = ",",quote = F)
+
+res_CNCC_vs_ESC <- decideTestsDGE(qlf.CNCC_vs_ESC,adjust.method="BH", p.value = 0.05,lfc=0)
+
+summary(res_CNCC_vs_ESC)
+
+
+tss_res_CNCC_vs_ESC <- export_bed_and_TSS_in_bed_regions(tss_file,'./',label_case,res_CNCC_vs_ESC)
+
+pdf(paste0('MD_MA_plot_differential_binding_analysis_',label_case,'.pdf'),8,7)
+plotMD(qlf.CNCC_vs_ESC,status = res_CNCC_vs_ESC,values =c(1,0,-1),col=c("red","black","blue"))
+title(paste0("\n\nDEup:",length(which(res_CNCC_vs_ESC==1)),
+             " - DEdown: ",length(which(res_CNCC_vs_ESC==-1)),
+             " - notDE: ",length(which(res_CNCC_vs_ESC==0))))
+dev.off()
+
+## ==  NSC vs ESC 
+N_condition <- 7
+
+colnames(fit)[N_condition]
+
+label_case <-  paste0(colnames(fit)[N_condition],"_vs_ESC")
+
+qlf.NSC_vs_ESC <- glmQLFTest(fit, coef=N_condition) 
+
+de_pairing_NSC_vs_ESC <- topTags(qlf.NSC_vs_ESC, n= nrow(y$counts))$table
+
+write.table(de_pairing_NSC_vs_ESC,file = paste0('EdgeRtable_differential_binding_analysis_',label_case,'.csv'), col.names = NA,sep = ",",quote = F)
+
+res_NSC_vs_ESC <- decideTestsDGE(qlf.NSC_vs_ESC,adjust.method="BH", p.value = 0.1,lfc=0)
+
+summary(res_NSC_vs_ESC)
+
+tss_res_NSC_vs_ESC <- export_bed_and_TSS_in_bed_regions(tss_file,'./',label_case,res_NSC_vs_ESC)
+
+pdf(paste0('MD_MA_plot_differential_binding_analysis_',label_case,'.pdf'),8,7)
+plotMD(qlf.NSC_vs_ESC,status = res_NSC_vs_ESC,values =c(1,0,-1),col=c("red","black","blue"))
+title(paste0("\n\nDEup:",length(which(res_NSC_vs_ESC==1)),
+             " - DEdown: ",length(which(res_NSC_vs_ESC==-1)),
+             " - notDE: ",length(which(res_NSC_vs_ESC==0))))
+dev.off()
+
+
+label_case <-  "NSC_vs_CNCC"
+
+qlf.NSC_vs_CNCC <- glmQLFTest(fit, contrast=c(0,0,0,0,0,-1,1))
+
+de_pairing_NSC_vs_CNCC <- topTags(qlf.NSC_vs_CNCC, n= nrow(y$counts))$table
+
+write.table(de_pairing_NSC_vs_CNCC,file = paste0('EdgeRtable_differential_binding_analysis_',label_case,'.csv'), col.names = NA,sep = ",",quote = F)
+
+res_NSC_vs_CNCC <- decideTestsDGE(qlf.NSC_vs_CNCC,adjust.method="BH", p.value = 0.1,lfc=0)
+
+summary(res_NSC_vs_CNCC)
+
+tss_res_NSC_vs_CNCC <- export_bed_and_TSS_in_bed_regions(tss_file,'./',label_case,res_NSC_vs_CNCC)
+
+pdf(paste0('MD_MA_plot_differential_binding_analysis_',label_case,'.pdf'),8,7)
+plotMD(qlf.NSC_vs_CNCC,status = res_NSC_vs_CNCC,values =c(1,0,-1),col=c("red","black","blue"))
+title(paste0("\n\nDEup:",length(which(res_NSC_vs_CNCC==1)),
+             " - DEdown: ",length(which(res_NSC_vs_CNCC==-1)),
+             " - notDE: ",length(which(res_NSC_vs_CNCC==0))))
+dev.off()
+
+DBA_outcome_Nregions <- cbind(summary(res_NSC_vs_ESC),
+                              summary(res_CNCC_vs_ESC),
+                             summary(res_NSC_vs_CNCC))
+
+DBA_outcome_N_TSS <- cbind(tss_res_NSC_vs_ESC$placeholder,
+                           tss_res_CNCC_vs_ESC$placeholder,
+                           tss_res_NSC_vs_CNCC$placeholder)
+
+colnames(DBA_outcome_N_TSS) <- colnames(DBA_outcome_Nregions)
+rownames(DBA_outcome_N_TSS) <- tss_res_NSC_vs_ESC$type
+
+write.table(DBA_outcome_N_TSS,file='stem_cells_DBA_outcome_N_TSS.csv',col.names = NA,quote = F, sep = ",")
+
+write.table(DBA_outcome_Nregions,file='stem_cells_DBA_outcome_Nregions.csv',col.names = NA,quote = F, sep = ",")
+
+```
+
+### Collect annotations for ESC, CNCC and NSC in order to annotate promoters and integrate all data
+
+
+```{bash, eval = F}
+# annotation from ESC CNCC and NPC (like NSC) have been reprocessed from scratch!!!
+####################  .  ####################  .  ####################  .  ####################  .  ####################
+
+
+# specific to each cell: cell line 1 minus merge of the other 2 (so one peak has to be exclusive to one case only)
+# note: 20200421.bed files: --> specific regions in each cell type have been extracted as A not overlapping union(B,C)
+
+cat NSC.bio2out3.bed CNCC.bio2out3.bed | sortBed -i - |mergeBed -i - | intersectBed -a ESC.bio2out3.bed -b - -v > ESC_specific.20200421.bed
+cat ESC.bio2out3.bed CNCC.bio2out3.bed | sortBed -i - |mergeBed -i - | intersectBed -a NSC.bio2out3.bed -b - -v > NSC_specific.20200421.bed
+cat NSC.bio2out3.bed ESC.bio2out3.bed | sortBed -i - |mergeBed -i - | intersectBed -a CNCC.bio2out3.bed -b - -v > CNCC_specific.20200421.bed
+
+path_annotations=~/Data/20200326_extern_stem_cells_data/final_reference_sets_stem_cells_published_data
+cd $path_annotations
+ls
+cd $path_annotations
+promoter_1kb=~/reference_genomes/hg38/gencode.v28.TSS.slop1000.bed
+#CNCC_bival_regions.H3K27me3_SRR2096422.H3K4me3_human1.multi2.intersect.bed
+#CNCC_H3K27me3_SRR2096422_vs_SRR2096456_peaks.bed
+#CNCC_H3K4me3_human1.multi2.bed
+#ESC_bival_regions.Rada_Iglesias_lifted_hg38.H3K27me3.H3K4me3.intersect.bed
+#NSC_bival_regions.renlab.H3K27me3.H3K4me3.intersect.bed
+#NSC_H3K27me3_NPC_renlab.bed
+#NSC_H3K4me3_NPC_renlab.bed
+#Rada_Iglesias_lifted_hg38.H3K27me3.bed
+#Rada_Iglesias_lifted_hg38.H3K4me3.bed
+# after updating annotations on bivalent promoters (April 2020), re-run this inluding
+#-ESC_k27
+#-ESC_K27_minus_bival
+#-ESC_k4
+#-ESC_K4_minus_bival
+#-ESC_bival
+ESC_bival=$path_annotations/ESC_bival_regions.Rada_Iglesias_lifted_hg38.H3K27me3.H3K4me3.intersect.bed
+ESC_K27=$path_annotations/Rada_Iglesias_lifted_hg38.H3K27me3.bed
+ESC_K4=$path_annotations/Rada_Iglesias_lifted_hg38.H3K4me3.bed
+ESC_G4=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/ESC.bio2out3.bed
+ESC_G4_specific=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/ESC_specific.20200421.bed
+ESC_NSC_G4_union_of_intersection=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/ESC_specific.20200421.bed
+
+ESC_annotated_promoters=$path_annotations/ESC_annotated_promoters.Rada_Iglesias_lifted_hg38.bed
+
+#bedtools annotate -i $promoter_1kb -files $ESC_K4 $ESC_K27 $ESC_bival -names ESC_H3K4me3 ESC_H3K27me3 ESC_bival -counts > $ESC_annotated_promoters
+#-CNCC_k27
+#-CNCC_k4
+#-CNCC_K27_minus_bival
+#-CNCC_K4_minus_bival
+#-CNCC_bival
+CNCC_bival=$path_annotations/CNCC_bival_regions.H3K27me3_SRR2096422.broad.H3K4me3_human1.multi2.intersect.bed #CNCC_bival_regions.H3K27me3_SRR2096422.H3K4me3_human1.multi2.intersect.bed # before it was base on narrow Peaks
+CNCC_K27=$path_annotations/CNCC_H3K27me3_SRR2096422_vs_SRR2096456_peaks.broad.bed #CNCC_H3K27me3_SRR2096422_vs_SRR2096456_peaks.bed
+CNCC_K4=$path_annotations/CNCC_H3K4me3_human1.multi2.bed
+CNCC_G4=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/CNCC.bio2out3.bed
+CNCC_G4_specific=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/CNCC_specific.20200421.bed
+CNCC_annotated_promoters=$path_annotations/CNCC_annotated_promoters.CNCC_reprocessed.bed
+#bedtools annotate -i $promoter_1kb -files $CNCC_K4 $CNCC_K27 $CNCC_bival -names CNCC_H3K4me3 CNCC_H3K27me3 CNCC_bival -counts > $CNCC_annotated_promoters
+
+#-NSC_k27
+#-NSC_k4
+#-NSC_K27_minus_bival
+#-NSC_K4_minus_bival
+#-NSC_bival
+NSC_bival=$path_annotations/NSC_bival_regions.renlab.H3K27me3.broad.H3K4me3.intersect.bed #NSC_bival_regions.renlab.H3K27me3.H3K4me3.intersect.bed
+NSC_K27=$path_annotations/NSC_H3K27me3_NPC_renlab.broad.bed #NSC_H3K27me3_NPC_renlab.bed
+NSC_K4=$path_annotations/NSC_H3K4me3_NPC_renlab.bed
+NSC_G4=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/NSC.bio2out3.bed
+NSC_G4_specific=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/NSC_specific.20200421.bed
+NSC_annotated_promoters=$path_annotations/NSC_annotated_promoters.NPC_renlab.bed
+NSC_annotated_promoters_080720=$path_annotations/NSC_annotated_promoters.NPC_renlab.080720.bed
+
+bedtools annotate -i $promoter_1kb -files $NSC_K4 $NSC_K27 $NSC_bival -names NSC_H3K4me3 NSC_H3K27me3 NSC_bival -counts > $NSC_annotated_promoters
+bedtools annotate -i $promoter_1kb -files $NSC_K4 $NSC_K27 $NSC_bival -names NSC_H3K4me3 NSC_H3K27me3 NSC_bival -counts > $NSC_annotated_promoters_080720
+
+ESC_CNCC_NSC_annotated_promoters_G4=$path_annotations/ESC_CNCC_NSC_annotated_promoters_G4.bed
+### annotations of promoters with G4 signal
+ESC_CNCC_NSC_G4_common_all=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/ESC_CNCC_NSC.multi3_common.bed
+
+####################  .  ####################  .  ####################  .  ####################  .  ####################
+
+# use also the intermediate cases (intermediates)
+# ESC_NSC=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/NSC_ESC_intermediate2.bed
+# ESC_CNCC=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/ESC_CNCC_intermediate3.bed
+# NSC_CNCC=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/NSC_CNCC_intermediate1.bed
+
+#common_ESC_vs_CNCC.strict.merged.bed  common_ESC_vs_NSC.strict.merged.bed  common_NSC_vs_CNCC.strict.merged.bed
+ESC_NSC=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common/common_ESC_vs_NSC.strict.merged.bed
+ESC_CNCC=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common/common_ESC_vs_CNCC.strict.merged.bed
+NSC_CNCC=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common/common_NSC_vs_CNCC.strict.merged.bed
+
+
+
+bedtools annotate -i $promoter_1kb -files $ESC_G4 $CNCC_G4 $NSC_G4 $ESC_G4_specific $CNCC_G4_specific $NSC_G4_specific $ESC_CNCC_NSC_G4_common_all $ESC_NSC $ESC_CNCC $NSC_CNCC -names ESC_G4 CNCC_G4 NSC_G4 ESC_G4_specific CNCC_G4_specific NSC_G4_specific ESC_CNCC_NSC_G4_common common_ESC_vs_NSC.strict common_ESC_vs_CNCC.strict common_NSC_vs_CNCC.strict -counts > $ESC_CNCC_NSC_annotated_promoters_G4
+
+
+## functional annotation for genes that are in proximity of the BG4 peaks by cell line
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Comparison_promoters_BG4_static_peaks
+output_folder='~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Comparison_promoters_BG4_static_peaks'
+bed_scenario1=`ls ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/*bed`
+sbatch --mem 12G --wrap "bedtools annotate -i $promoter_1kb -files ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/*bed -names CNCC_BG4 NSC_BG4 ESC_BG4 -counts > $output_folder/Promoters_annotated_For_BG4peaks.bed"
+
+# save to files those peaks that overlap with promoters
+intersectBed -a ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/ESC.bio2out3.bed -b $promoter_1kb -wa -wb > $output_folder/ESC_overlap_promoter.bed
+intersectBed -a ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/NSC.bio2out3.bed -b $promoter_1kb -wa -wb > $output_folder/NSC_overlap_promoter.bed
+intersectBed -a ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/CNCC.bio2out3.bed -b $promoter_1kb -wa -wb > $output_folder/CNCC_overlap_promoter.bed
+
+# peaks that overlap promoter - check if they overlap with other histone modifications (K4_, K27, bivalent)
+
+cp ~/reference_genomes/epigenetic_annotations_stem_cells/Promoters_annotated_For_epigenetic_marks.bed $output_folder
+
+# include CpG methylated sites
+
+CpG_annot=~/Data/Katie_high_level_analysis_Oct2019/CpG_island/pnas.1613300114.sd02_hESC_eexported_rearranged.hg38.annotations.bed
+
+grep 'CGI_m' $CpG_annot  > ~/Data/Katie_high_level_analysis_Oct2019/CpG_island/3300114.sd02_hESC_eexported_rearranged.hg38.annotations.CGI_m.bed
+grep 'CGI_um' $CpG_annot  > ~/Data/Katie_high_level_analysis_Oct2019/CpG_island/3300114.sd02_hESC_eexported_rearranged.hg38.annotations.CGI_um.bed
+
+CpG_unmeth=~/Data/Katie_high_level_analysis_Oct2019/CpG_island/3300114.sd02_hESC_eexported_rearranged.hg38.annotations.CGI_um.bed
+CpG_meth=~/Data/Katie_high_level_analysis_Oct2019/CpG_island/3300114.sd02_hESC_eexported_rearranged.hg38.annotations.CGI_m.bed
+#annotate promoters with CpG met and unmethylated
+path_annotations=~/Data/20200326_extern_stem_cells_data/final_reference_sets_stem_cells_published_data
+cd $path_annotations
+output_folder='~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Comparison_promoters_BG4_static_peaks'
+promoter_1kb=~/reference_genomes/hg38/gencode.v28.TSS.slop1000.bed
+sbatch --mem 12G --wrap "bedtools annotate -i $promoter_1kb -files $CpG_unmeth $CpG_meth -names ESC_CpG_unmeth ESC_CpG_meth -counts > $path_annotations/ESC_CpG_met_annotated_promoters.bed"
+
+
+## ATAC-SEQ
+# annotate promoters with atac seq data
+cd ~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output
+ls ~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output*.multi2.sorted.bed
+CNCC_ATAC.multi2.sorted.bed  ESC_ATAC.multi2.sorted.bed  NSC_ATAC.multi2.sorted.bed
+
+ESC_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/ESC_ATAC.multi2.sorted.bed
+NSC_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/NSC_ATAC.multi2.sorted.bed
+CNCC_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/CNCC_ATAC.multi2.sorted.bed
+
+# common
+# common between 3 sets
+multiIntersectBed -i *.multi2.sorted.bed | awk '{if ($4==3) print $0}' | sortBed -i - | mergeBed -i - | sortBed -i -  > ESC_CNCC_NSC.atac.multi3_common.bed
+
+ESC_NSC_CNCC_atac_common=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/ESC_CNCC_NSC.atac.multi3_common.bed
+
+# pariwise intersect.strict
+sbatch --mem 6G --wrap "intersectBed -a $ESC_atac -b $NSC_atac | sortBed -i - | mergeBed -i -> common_ESC_vs_NSC.atac.strict.merged.bed"
+sbatch --mem 6G --wrap "intersectBed -a $ESC_atac -b $CNCC_atac| sortBed -i - | mergeBed -i -> common_ESC_vs_CNCC.atac.strict.merged.bed"
+sbatch --mem 6G --wrap "intersectBed -a $NSC_atac -b $CNCC_atac| sortBed -i - | mergeBed -i -> common_NSC_vs_CNCC.atac.strict.merged.bed"
+  
+
+#annotate promoters with atac-seq data
+path_annotations=~/Data/20200326_extern_stem_cells_data/final_reference_sets_stem_cells_published_data
+cd $path_annotations
+promoter_1kb=~/reference_genomes/hg38/gencode.v28.TSS.slop1000.bed
+ESC_NSC_CNCC_atac_common=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/ESC_CNCC_NSC.atac.multi3_common.bed
+ESC_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/ESC_ATAC.multi2.sorted.bed
+NSC_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/NSC_ATAC.multi2.sorted.bed
+CNCC_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/CNCC_ATAC.multi2.sorted.bed
+common_ESC_vs_NSC_atac_strict=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/common_ESC_vs_NSC.atac.strict.merged.bed
+common_ESC_vs_CNCC_atac_strict=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/common_ESC_vs_CNCC.atac.strict.merged.bed
+common_NSC_vs_CNCC_atac_strict=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/common_NSC_vs_CNCC.atac.strict.merged.bed
+
+sbatch --mem 12G --wrap "bedtools annotate -i $promoter_1kb -files $ESC_atac $CNCC_atac $NSC_atac $ESC_NSC_CNCC_atac_common $common_ESC_vs_NSC_atac_strict $common_ESC_vs_CNCC_atac_strict $common_NSC_vs_CNCC_atac_strict -names ESC_atac CNCC_atac NSC_atac ESC_NSC_CNCC_atac_common common_ESC_vs_NSC_atac_strict common_ESC_vs_CNCC_atac_strict common_NSC_vs_CNCC_atac_strict -counts > $path_annotations/ESC_CNCC_NSC_annotated_promoters_atac_seq.bed"
+
+# 
+```
+
+Generate table in R with annotated promoters obtained after reprocessing NSC and CNCC (attempts2 personal notes, april 2020)
+
+```{bash, eval = F}
+cd ~/Data/20200326_extern_stem_cells_data/final_reference_sets_stem_cells_published_data
+ls *annotated_promoters*.bed
+#   58382 CNCC_annotated_promoters.CNCC_reprocessed.bed
+#   58382 ESC_annotated_promoters.Rada_Iglesias_lifted_hg38.bed
+#   58382 ESC_CNCC_NSC_annotated_promoters_G4.bed
+#   58382 NSC_annotated_promoters.NPC_renlab.bed
+
+#files
+#/final_reference_sets_stem_cells_published_data/*annotated_promoters*.bed .
+#genome
+# ~/reference_genomes/hg38/gencode.v28.annotation.gene_bed6_1kbaroundTSS.bed .
+```
+
+
+Merge annotations (tables) and produce counts
+
+```{R, eval =F}
+setwd('/stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4')
+library(dplyr)
+library(plyr)
+library(networkD3)
+library(tidyr)
+# load tables
+
+# ESC_epig_annot
+ESC_epig_annot <- read.delim('ESC_annotated_promoters.Rada_Iglesias_lifted_hg38.bed',sep = "\t", header = T, stringsAsFactors = F)
+# CNCC_epig_annot
+CNCC_epig_annot <- read.delim('CNCC_annotated_promoters.CNCC_reprocessed.bed',sep = "\t", header = T, stringsAsFactors = F)
+# NSC_epig_annot
+NSC_epig_annot <- read.delim('NSC_annotated_promoters.NPC_renlab.bed',sep = "\t", header = T, stringsAsFactors = F)
+
+#G4_annotations
+G4_annotations <- read.delim('ESC_CNCC_NSC_annotated_promoters_G4.bed',sep = "\t", header = T, stringsAsFactors = F)
+
+#atac annotations
+atac_annotations <- read.delim('ESC_CNCC_NSC_annotated_promoters_atac_seq.bed',sep = "\t", header = T, stringsAsFactors = F)
+
+#ESC methylation annotations
+ESC_CpG_met <- read.delim('ESC_CpG_met_annotated_promoters.bed',sep = "\t", header = T, stringsAsFactors = F)
+
+colnames(ESC_epig_annot)[1:6] <- colnames(CNCC_epig_annot)[1:6] <- colnames(NSC_epig_annot)[1:6] <-colnames(G4_annotations)[1:6] <- colnames(atac_annotations)[1:6] <- colnames(ESC_CpG_met)[1:6] <- c('chr_name','start_pos_prom','end_pos_prom','ens_id','feat1','strand')
+
+
+# annotation of typology of transcripts (proein_coding, others...)
+annot_trascripts <- read.delim('gencode.v28.annotation.gene_bed6_1kbaroundTSS.bed',sep = "\t", header = F, stringsAsFactors = F)
+annot_trascripts <- annot_trascripts[,c(7,8)]
+colnames(annot_trascripts) <- c('ens_id','transcript_type')
+annot_trascripts$transcript_type <- gsub(";","",annot_trascripts$transcript_type)
+head(annot_trascripts)
+
+TPM_file <- '/Users/simeon01/Documents/Katie/2018_09_03/RNA_seq/TPM_hg38_all_bio_rep_meanTechReps.csv'
+TPM_rnaseq <- read.delim(TPM_file, stringsAsFactors = F,header = T,row.names=NULL, sep = ",")
+colnames(TPM_rnaseq)[c(1,2,3)] <- c('ens_symb','ens_id','symb')
+
+#TPM_median_expression <-  TPM_rnaseq %>% group_by(ens_id) %>% mutate(median_TPM_ESC = median(H9_hESC_NA_p10,H9_hESC_NA_p11,H9_hESC_NA_p12,H9_hESC_NA_p3,H9_hESC_NA_p2,na.rm = T)) %>% mutate(median_TPM_NSC = median(H9_NSC_NA_p4.2,H9_NSC_NA_p4.3,H9_NSC_NA_p4.4,H9_NSC_NA_p4.1,na.rm =T)) %>% mutate(median_TPM_NEC = median(H9_neurosphere_NA_p5,H9_neurosphere_NA_p6,H9_neurosphere_NA_p7,H9_neurosphere_NA_p8,H9_neurosphere_NA_p9,na.rm =T)) %>% mutate(median_TPM_CNCC = median(H9_CNCC_A1_p15,H9_CNCC_A2_p16,H9_CNCC_B4_p17,H9_CNCC_A3_p18,H9_CNCC_B3_p19,H9_CNCC_4_p20,H9_CNCC_A1_p21,H9_CNCC_A5_p22,na.rm =T))
+
+library(matrixStats)
+TPM_median_expression <- TPM_rnaseq
+TPM_median_expression$median_TPM_ESC <- rowMedians(cbind(TPM_rnaseq$H9_hESC_NA_p10,
+                                              TPM_rnaseq$H9_hESC_NA_p11,
+                                          TPM_rnaseq$H9_hESC_NA_p12,
+                                          TPM_rnaseq$H9_hESC_NA_p3,
+                                          TPM_rnaseq$H9_hESC_NA_p2),na.rm = T)
+
+TPM_median_expression$median_TPM_NSC <- rowMedians(cbind(TPM_rnaseq$H9_NSC_NA_p4.2,
+                                              TPM_rnaseq$H9_NSC_NA_p4.3,
+                                          TPM_rnaseq$H9_NSC_NA_p4.4,
+                                          TPM_rnaseq$H9_NSC_NA_p4.1,
+                                          TPM_rnaseq$H9_hESC_NA_p2),na.rm = T)
+
+TPM_median_expression$median_TPM_NEC <- rowMedians(cbind(TPM_rnaseq$H9_neurosphere_NA_p5,
+                                          TPM_rnaseq$H9_neurosphere_NA_p6,
+                                          TPM_rnaseq$H9_neurosphere_NA_p7,
+                                          TPM_rnaseq$H9_neurosphere_NA_p8,
+                                          TPM_rnaseq$H9_neurosphere_NA_p9),na.rm = T)
+
+TPM_median_expression$median_TPM_CNCC <- rowMedians(cbind(TPM_rnaseq$H9_CNCC_A1_p15,
+                                          TPM_rnaseq$H9_CNCC_A2_p16,
+                                          TPM_rnaseq$H9_CNCC_A3_p18,
+                                          TPM_rnaseq$H9_CNCC_B3_p19,
+                                          TPM_rnaseq$H9_CNCC_4_p20,
+                                          TPM_rnaseq$H9_CNCC_A1_p21,
+                                          TPM_rnaseq$H9_CNCC_A5_p22),na.rm = T)
+
+TPM_median_expression$ens_id <- paste0(TPM_median_expression$ens_id,";")
+
+All_anno <- join_all(list(TPM_median_expression,ESC_epig_annot,CNCC_epig_annot,NSC_epig_annot,G4_annotations,atac_annotations,ESC_CpG_met,annot_trascripts), by='ens_id', type='left')
+dim(All_anno)
+
+All_anno <- All_anno %>% setNames(make.names(names(.), unique = TRUE)) %>% 
+    select(-matches("*\\.[1-9]+$"))
+colnames(All_anno)
+
+
+# create specific new features for lose bival
+All_anno <- dplyr::mutate(All_anno,ESC_relax_biv= ifelse(ESC_H3K4me3 >= 1 & ESC_H3K27me3 >= 1 &  ESC_bival ==0, 1,0))
+All_anno <- dplyr::mutate(All_anno,CNCC_relax_biv= ifelse(CNCC_H3K4me3 >= 1 & CNCC_H3K27me3 >= 1 &  CNCC_bival ==0, 1,0))
+All_anno <- dplyr::mutate(All_anno,NSC_relax_biv= ifelse(NSC_H3K4me3 >= 1 & NSC_H3K27me3 >= 1 &  NSC_bival ==0, 1,0))
+
+
+All_anno <- dplyr::mutate(All_anno,ESC_status = case_when(
+                          (ESC_H3K4me3 == 0 & ESC_bival == 0 &  ESC_relax_biv == 0 & ESC_H3K27me3 == 0) ~ 'Unmarked',
+                          (ESC_H3K4me3 >= 1 & ESC_bival == 0 &  ESC_relax_biv == 0 & ESC_H3K27me3 == 0) ~ 'H3K4me3_only',
+                          (ESC_H3K4me3 == 0 & ESC_bival == 0 &  ESC_relax_biv == 0 & ESC_H3K27me3 >= 1) ~ 'H3K27me3_only',
+                          (ESC_bival >= 1) ~ 'bival',
+                          (ESC_relax_biv >= 1 ) ~ 'relax_bival'))
+
+
+All_anno <- dplyr::mutate(All_anno,CNCC_status = case_when(
+                          (CNCC_H3K4me3 == 0 & CNCC_bival == 0 &  CNCC_relax_biv == 0 & CNCC_H3K27me3 == 0) ~ 'Unmarked',
+                          (CNCC_H3K4me3 >= 1 & CNCC_bival == 0 &  CNCC_relax_biv == 0 & CNCC_H3K27me3 == 0) ~ 'H3K4me3_only',
+                          (CNCC_H3K4me3 == 0 & CNCC_bival == 0 &  CNCC_relax_biv == 0 & CNCC_H3K27me3 >= 1) ~ 'H3K27me3_only',
+                          (CNCC_bival >= 1) ~ 'bival',
+                          (CNCC_relax_biv >= 1 ) ~ 'relax_bival'))
+
+All_anno <- dplyr::mutate(All_anno,NSC_status = case_when(
+                          (NSC_H3K4me3 == 0 & NSC_bival == 0 &  NSC_relax_biv == 0 & NSC_H3K27me3 == 0) ~ 'Unmarked',
+                          (NSC_H3K4me3 >= 1 & NSC_bival == 0 &  NSC_relax_biv == 0 & NSC_H3K27me3 == 0) ~ 'H3K4me3_only',
+                          (NSC_H3K4me3 == 0 & NSC_bival == 0 &  NSC_relax_biv == 0 & NSC_H3K27me3 >= 1) ~ 'H3K27me3_only',
+                          (NSC_bival >= 1) ~ 'bival',
+                          (NSC_relax_biv >= 1 ) ~ 'relax_bival'))
+
+All_anno %>% filter(CNCC_G4==1 & ESC_G4==0) %>% tally()
+dim(All_anno)
+#[1] 58381    57
+
+save(All_anno,file="All_anno.RData")
+write.table(All_anno,file="All_anno_updated.txt", quote = F, sep= "\t",col.names = NA)
+assign('OLD_all_anno', get(load('OLD_')))
+# ### ### ### # ### ### ### # ### ### ### # ### ### ### # ### ### ### # ### ### ###
+setwd('/stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4')
+
+load("All_anno.RData")
+library(dplyr)
+library(plyr)
+library(networkD3)
+
+# ||    **                     FILTER                       **       ||
+# || ########## !!!!! HERE IS THE FILTERING CRITERIA !!! ########### ||
+# \/                                                                 \/
+# T <- All_anno %>% filter(CNCC_G4>=1 & ESC_G4>=1) %>% select(ens_id,ESC_status,CNCC_status) 
+# T <- All_anno %>% filter(common_ESC_vs_CNCC.strict>=1) %>% select(ens_id,ESC_status,CNCC_status)
+ 
+T <- All_anno %>% filter(ESC_G4>=1 & transcript_type=="protein_coding") %>% select(ens_id,ESC_status,CNCC_status)
+TT <- All_anno %>%  select(ens_id,ESC_CpG_meth,ESC_CpG_unmeth)
+# T <- All_anno %>% filter(ESC_G4>=1) %>% select(ens_id,ESC_status,CNCC_status) 
+# /\                                                                 /\
+# || ########## ########### ############## ###########  ############ ||
+
+print(dim(T))
+
+links <- plyr::count(T[,-1])
+
+colnames(links) <- c("source","target","value")
+links$source <- paste0(links$source,'_1')
+links$target <- paste0(links$target,'_2')
+print(links)
+
+nodes <- data.frame(
+  name=c(as.character(links$source), 
+  as.character(links$target)) %>% unique())
+
+links$IDsource <- match(links$source, nodes$name)-1 
+links$IDtarget <- match(links$target, nodes$name)-1
+
+p <- sankeyNetwork(Links = links, Nodes = nodes,
+              Source = "IDsource", Target = "IDtarget",
+              Value = "value", NodeID = "name", 
+              sinksRight=FALSE)
+
+p
+
+
+## select only one mark per time and stratify by G4
+
+D <- All_anno %>% filter(CNCC_status =="H3K4me3_only") %>% select(ens_id, ESC_status, CNCC_status, ESC_G4, CNCC_G4)
+ 
+#create new column with groups based on G4peakstatus
+D$ESC_G4_status = ifelse(D$ESC_G4 >0,"G4pos", "G4neg")
+D$CNCC_G4_status = ifelse(D$CNCC_G4 >0,"G4pos", "G4neg")   
+ 
+D$start <- paste(D$ESC_status, D$ESC_G4_status, sep='_')
+D$finish <- paste(D$CNCC_status, D$CNCC_G4_status, sep='_')
+ 
+T <- D %>%  select(ens_id,start,finish)
+ 
+# ### ### ### # ### ### ### # ### ### ### # ### ### ### # ### ### ### # ### ### ###
+
+
+All_anno2 %>% 
+    dplyr::mutate(n = 1) %>% 
+    spread(CNCC_status, n, fill=0) %>% 
+    select(CNCC_status,ESC_status) %>% 
+    {crossprod(as.matrix(.))} %>% 
+    replace(lower.tri(., diag=T), NA) %>%
+    reshape2::melt(na.rm=T) %>%
+    unite('Pair', c('Var1', 'Var2'), sep=", ")
+# create nodes dataframe
+regions <- unique(unique(All_anno$ESC_status))
+nodes <- data.frame(node = c(1:5), 
+                    chr_status = regions)
+#create links dataframe
+results <- dplyr::left_join(results,nodes, by="chr_status")
+results <- merge(results, nodes, by.x = "Region", by.y = "name")
+results <- merge(results, nodes, by.x = "result", by.y = "name")
+links <- results[ , c("node.x", "node.y", "vote")]
+colnames(links) <- c("source", "target", "value")
+
+# check various tally
+
+All_anno %>% dplyr::group_by('ens_id') %>% filter(CNCC_G4==1 & (CNCC_relax_biv ==1|CNCC_H3K4me3==1 |CNCC_H3K27me3 ==1)) %>% tally()
+All_anno %>% dplyr::group_by('ens_id') %>% filter(CNCC_G4_specific==1 & ESC_G4_specific==1) %>% tally()
+All_anno %>% dplyr::group_by('ens_id') %>% filter(CNCC_G4==1 & ESC_G4==0 & NSC_G4==0) %>% tally()
+All_anno %>% dplyr::group_by('ens_id') %>% filter(CNCC_G4==0 & ESC_G4==1 & NSC_G4==0) %>% tally()
+All_anno %>% dplyr::group_by('ens_id') %>% filter(CNCC_G4==0 & ESC_G4==0 & NSC_G4==1) %>% tally()
+
+
+temp_focus_on_common <-  All_anno %>% dplyr::group_by('ens_id') %>% dplyr::filter(ESC_CNCC_G4_common==1) 
+
+temp_focus_on_common2 <- temp_focus_on_common %>% dplyr::select(ESC_H3K4me3,ESC_H3K27me3,ESC_bival,ESC_relax_biv,ESC_CNCC_G4_common,ESC_G4,CNCC_H3K4me3,CNCC_H3K27me3,CNCC_bival) 
+
+temp_focus_on_common2[temp_focus_on_common2>1] <-  1
+
+```
+
+
+
+G4 regions overlapping promoters focusing on regions that are common across CNCC, ESC and NSC
+
+```{bash, eval = F}
+
+cd /stem_cells//broad/scenario1_multi2
+
+# cell line BG4 peaks consensus are bio2out3.bed
+# regions present in all 3 also with 100bp proximity
+multiIntersectBed -i *bio2out3.bed | awk '{if ($4==3) print $0}'| sortBed -i - | mergeBed -i - > common_regions_ESC_NSC_CNCC.bed
+
+multiIntersectBed -i *bio2out3.bed | awk '{if ($4==3) print $0}'| sortBed -i - | mergeBed -i - -d 1000 > common_regions_ESC_NSC_CNCC.merge1000.bed
+
+# for each bio2out3.bed intersect with common regions
+for file in *bio2out3.bed
+do
+  intersectBed -a $file -b common_regions_ESC_NSC_CNCC.bed -wa -wb > ${file%%.bed}.intersect_common_regions_ESC_NSC_CNCC.bed
+  intersectBed -a $file -b common_regions_ESC_NSC_CNCC.merge1000.bed -wa -wb > ${file%%.bed}.intersect_common_regions_ESC_NSC_CNCC.merge1000.bed
+done  
+
+
+cd /stem_cells//broad/scenario1_multi2 
+intersectBed -a ESC.bio2out3.intersect_common_regions_ESC_NSC_CNCC.bed -b /Users/simeon01/Documents/genomes/hg38/gencode.v28.annotation.gene_bed6_1kbaroundTSS.bed -wa -wb > ESC.bio2out3.intersect_common_regions_ESC_NSC_CNCC.G4_overlap_prom.bed 
+
+
+annotateBed -i ESC.bio2out3.intersect_common_regions_ESC_NSC_CNCC.bed -files /Users/simeon01/Documents/genomes/hg38/gencode.v28.annotation.gene_bed6_1kbaroundTSS.bed -names G4_in_1kbProm -counts > ESC.bio2out3.intersect_common_regions_ESC_NSC_CNCC.G4_peaks_anotated_by_promoter.bed
+
+annotateBed -i ESC.bio2out3.intersect_common_regions_ESC_NSC_CNCC.bed -files /Users/simeon01/Documents/OQs/OQ_plus_hits.lifted_hg19_to_hg38.Minus_Strand_bed6.bed /Users/simeon01/Documents/OQs/OQ_minus_hits.lifted_hg19_to_hg38.Plus_Strand_bed6.bed -names Minus_Strand_bed6 Plus_Strand_bed6  -counts > ESC.bio2out3.intersect_common_regions_ESC_NSC_CNCC.G4_peaks_anotated_by_OQsStrand.bed
+
+
+# additional question - 
+# annotate common peaks by k27, k4 and bivalent
+cd /stem_cells//broad/scenario1_multi2 
+ESC_K27=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/rada_iglesia_ESC_macs2_peaks/Rada_Iglesias_lifted_hg38.H3K27me3.bed
+ESC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/rada_iglesia_ESC_macs2_peaks/Rada_Iglesias_lifted_hg38.H3K4me3.bed
+ESC_bival=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/bivalent_promoters/ESC_bival_regions.Rada_Iglesias_lifted_hg38.H3K27me3.H3K4me3.intersect.bed
+
+CNCC_K27=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/prescott_CNCC_macs2_peaks/H3K27me3_SRR2096422_vs_SRR2096456_peaks.broadPeak
+CNCC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/prescott_CNCC_macs2_peaks/H3K4me3_human1.multi2.bed
+CNCC_bival=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/bivalent_promoters/CNCC_bival_regions.H3K27me3_SRR2096422.broad.H3K4me3_human1.multi2.intersect.bed
+
+NSC_K27=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/xie_NSC_macs2_peaks/renlab.H3K27me3.broad.NPC.intersect.bed
+NSC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/xie_NSC_macs2_peaks/renlab.H3K4me3.NPC.intersect.bed 
+NSC_bival=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/bivalent_promoters/NSC_bival_regions.renlab.H3K27me3.broad.H3K4me3.intersect.bed
+cd /stem_cells//broad/scenario1_multi2 
+cut -f 4,5,6 ESC.bio2out3.intersect_common_regions_ESC_NSC_CNCC.bed | annotateBed -i - -files $ESC_K27 $ESC_K4 $ESC_bival $CNCC_K27 $CNCC_K4 $CNCC_bival $NSC_K27 $NSC_K4 $NSC_bival -names ESC_K27 ESC_K4 ESC_bival CNCC_K27 CNCC_K4 CNCC_bival NSC_K27 NSC_K4 NSC_bival -counts > intersect_common_regions_ESC_NSC_CNCC.G4_peaks_anotated_by_epigenetic_marks.bed
+
+# intersect individual peaks with TSS and then with epigenetic marks
+for file in *bio2out3.bed
+  do
+  intersectBed -a $file -b /Users/simeon01/Documents/genomes/hg38/gencode.v28.annotation.gene_bed6_1kbaroundTSS.bed -wa -wb | annotateBed -i - -files common_regions_ESC_NSC_CNCC.bed $ESC_K27 $ESC_K4 $ESC_bival $CNCC_K27 $CNCC_K4 $CNCC_bival $NSC_K27 $NSC_K4 $NSC_bival -names common_BG4_regions ESC_K27 ESC_K4 ESC_bival CNCC_K27 CNCC_K4 CNCC_bival NSC_K27 NSC_K4 NSC_bival -counts > ${file%%.bed}.G4_peaks_overlapping_prom_anotated_by_epigenetic_marks.bed
+  done
+
+```
+
+Do something similar to before for regions that are specific to each cell lines
+
+```{bash, eval = F}
+
+# additional question - 
+# annotate common peaks by k27, k4 and bivalent
+cd /stem_cells//broad/scenario1_multi2 
+ESC_K27=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/rada_iglesia_ESC_macs2_peaks/Rada_Iglesias_lifted_hg38.H3K27me3.bed
+ESC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/rada_iglesia_ESC_macs2_peaks/Rada_Iglesias_lifted_hg38.H3K4me3.bed
+ESC_bival=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/bivalent_promoters/ESC_bival_regions.Rada_Iglesias_lifted_hg38.H3K27me3.H3K4me3.intersect.bed
+
+CNCC_K27=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/prescott_CNCC_macs2_peaks/H3K27me3_SRR2096422_vs_SRR2096456_peaks.broadPeak
+CNCC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/prescott_CNCC_macs2_peaks/H3K4me3_human1.multi2.bed
+CNCC_bival=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/bivalent_promoters/CNCC_bival_regions.H3K27me3_SRR2096422.broad.H3K4me3_human1.multi2.intersect.bed
+
+NSC_K27=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/xie_NSC_macs2_peaks/renlab.H3K27me3.broad.NPC.intersect.bed
+NSC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/xie_NSC_macs2_peaks/renlab.H3K4me3.NPC.intersect.bed 
+NSC_bival=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/bivalent_promoters/NSC_bival_regions.renlab.H3K27me3.broad.H3K4me3.intersect.bed
+cd /stem_cells//broad/scenario1_multi2 
+
+# intersect individual peaks with TSS and then with epigenetic marks
+
+
+for file in *_specific.20200421.bed
+do
+  
+  annotateBed -i $file -files /Users/simeon01/Documents/genomes/hg38/gencode.v28.annotation.gene_bed6_1kbaroundTSS.bed -names G4_in_1kbProm -counts > ${file%%.bed}.G4_peaks_anotated_by_promoter.bed
+  
+  annotateBed -i $file -files /Users/simeon01/Documents/OQs/OQ_plus_hits.lifted_hg19_to_hg38.Minus_Strand_bed6.bed /Users/simeon01/Documents/OQs/OQ_minus_hits.lifted_hg19_to_hg38.Plus_Strand_bed6.bed -names Minus_Strand_bed6 Plus_Strand_bed6  -counts > ${file%%.bed}.G4_peaks_anotated_by_OQsStrand.bed
+  
+  annotateBed -i $file -files $ESC_K27 $ESC_K4 $ESC_bival $CNCC_K27 $CNCC_K4 $CNCC_bival $NSC_K27 $NSC_K4 $NSC_bival -names ESC_K27 ESC_K4 ESC_bival CNCC_K27 CNCC_K4 CNCC_bival NSC_K27 NSC_K4 NSC_bival -counts > ${file%%.bed}.G4_peaks_overlapping_prom_anotated_by_epigenetic_marks.bed
+  
+done
+
+
+```
+
+
+Overlap the full list of cell peaks with the respective H3K4me3 marks (in the respective cell line)
+
+```{bash, eval = F}
+cd /stem_cells//broad/scenario1_multi2 
+
+ESC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/rada_iglesia_ESC_macs2_peaks/Rada_Iglesias_lifted_hg38.H3K4me3.bed
+CNCC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/prescott_CNCC_macs2_peaks/H3K4me3_human1.multi2.bed
+NSC_K4=/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw/xie_NSC_macs2_peaks/renlab.H3K4me3.NPC.intersect.bed 
+
+intersectBed -a ESC.bio2out3.bed -b $ESC_K4 -wa -wb > ESC.bio2out3.intersect.ESC_K4.bed
+intersectBed -a CNCC.bio2out3.bed -b $CNCC_K4 -wa -wb > CNCC.bio2out3.intersect.CNCC_K4.bed
+intersectBed -a NSC.bio2out3.bed -b $NSC_K4 -wa -wb > NSC.bio2out3.intersect.NSC_K4.bed
+
+```
+
+
+## Density plots on ChIP-files using the regions exported before
+
+```{bash, eval = F}
+scp TSS_overlapping_G4_regions_common_to_ESC_CNCC_NSC_with_strand.bed clust1:~/Data/20200512_KatieStemCells_BW/reference_bed/
+
+scp G4_regions_common_to_ESC_CNCC_NSC_with_strand.bed clust1:~/Data/20200512_KatieStemCells_BW/reference_bed/
+scp G4_regions_common_to_ESC_CNCC_NSC_with_strand.slop1base.bed clust1:~/Data/20200512_KatieStemCells_BW/reference_bed/
+cd ~/Data/20200512_KatieStemCells_BW/
+mkdir density_at_common_regions
+
+ref1=~/Data/20200512_KatieStemCells_BW/reference_bed/TSS_overlapping_G4_regions_common_to_ESC_CNCC_NSC_with_strand.bed
+ref2=~/Data/20200512_KatieStemCells_BW/reference_bed/G4_regions_common_to_ESC_CNCC_NSC_with_strand.slop1base.bed
+
+cd ~/Data/20200512_KatieStemCells_BW
+for file in *.rpm.bw
+do
+  echo $file
+  #sbatch --mem 8G --wrap="computeMatrix reference-point -S $file -R $ref1 -bs 10 -a 1000 -b 1000 -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.TSS_overlapping_G4_regions_common.gz && plotProfile --matrixFile ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.TSS_overlapping_G4_regions_common.gz -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.TSS_overlapping_G4_regions_common.png --averageType mean --plotWidth 18 --plotHeight 10 --yMin 0 && plotHeatmap --matrixFile ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.TSS_overlapping_G4_regions_common.gz -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.TSS_overlapping_G4_regions_common.heatmap.png --averageType median"
+  echo "**"
+  #sbatch --mem 8G --wrap="computeMatrix reference-point -S $file -R $ref2 -bs 10 -a 1000 -b 1000 -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.G4_regions_common.gz && plotProfile --matrixFile ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.G4_regions_common.gz -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.G4_regions_common.png --averageType mean --plotWidth 18 --plotHeight 10 --yMin 0 && plotHeatmap --matrixFile ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.G4_regions_common.gz -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.G4_regions_common.heatmap.png --averageType median"
+  echo " ==== "
+  
+  
+  #sbatch --mem 8G --wrap="computeMatrix reference-point -S $file -R $ref1 -bs 5 -a 500 -b 500 -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.TSS_overlapping_G4_regions_common.500bp_5bp.gz"
+  echo "**"
+  #sbatch --mem 8G --wrap="computeMatrix reference-point -S $file -R $ref2 -bs 5 -a 500 -b 500 -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.G4_regions_common.500bp_5bp.gz"
+  
+  sbatch --mem 8G --wrap="computeMatrix reference-point -S $file -R $ref1 -bs 2 -a 300 -b 300 -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.TSS_overlapping_G4_regions_common.300bp_2bp.gz"
+  echo "**"
+  sbatch --mem 8G --wrap="computeMatrix reference-point -S $file -R $ref2 -bs 2 -a 300 -b 300 -o ~/Data/20200512_KatieStemCells_BW/density_at_common_regions/${file%%.bw}.G4_regions_common.300bp_2bp.gz"
+done
+
+
+#locally
+# copy back the results to combine segnal by cell type
+/stem_cells//broad/scenario1_multi2/density_at_common_G4_regions
+cd /stem_cells//broad/scenario1_multi2/density_at_common_G4_regions
+scp clust1:~/Data/20200512_KatieStemCells_BW/density_at_common_regions/* .
+
+
+```
+
+
+## comparison of peaks  -- analysis based on old annotations
+
+```{R, eval = F}
+setwd('/stem_cells//broad/scenario1_multi2/Comparison_promoters_BG4_static_peaks')
+Prom_annotation_BG4 <- read.table('Promoters_annotated_For_BG4peaks.bed',stringsAsFactors = F, sep = "\t")
+Prom_annotation_epigenetics <- read.table('Promoters_annotated_For_epigenetic_marks.bed', stringsAsFactors = F, sep = "\t", header = T)
+colnames(Prom_annotation_BG4) <- c('chr','start','end','ens_id','field','strand','CNCC_BG4','NSC_BG4','ESC_BG4')
+colnames(Prom_annotation_epigenetics) <- c('chr','start','end','ens_id','field','strand','ESC_bival','ESC_H3K4me3','ESC_H3K27me3','CNCC_bival','CNCC_H3K4me3','CNCC_H3K27me3','NSC_bival','NSC_H3K4me3','NSC_H3K27me3')
+
+# new annotations
+load("/stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4/All_anno.RData")
+#All_anno$ens_id <- gsub(';','',All_anno$ens_id)
+
+ESC_peaks <- read.table('ESC_overlap_promoter.bed', stringsAsFactors = F, sep = "\t")
+NSC_peaks <- read.table('NSC_overlap_promoter.bed', stringsAsFactors = F, sep = "\t")
+CNCC_peaks <- read.table('CNCC_overlap_promoter.bed', stringsAsFactors = F, sep = "\t")
+
+ESC_peaks <- data.frame(ESC_peaks)
+NSC_peaks <- data.frame(NSC_peaks)
+CNCC_peaks <- data.frame(CNCC_peaks)
+colnames(ESC_peaks) <- colnames(NSC_peaks) <- colnames(CNCC_peaks) <- c('chr','peak_start','peak_end','chrP','startP','endP','ens_id','fieldP','strandP')
+
+ESC_peaks$peak_size <- ESC_peaks$peak_end-ESC_peaks$peak_start
+ESC_peaks$peak_id <- paste(ESC_peaks$chr,ESC_peaks$peak_start,ESC_peaks$peak_end,sep="_")
+
+NSC_peaks$peak_size <- NSC_peaks$peak_end-NSC_peaks$peak_start
+NSC_peaks$peak_id <- paste(NSC_peaks$chr,NSC_peaks$peak_start,NSC_peaks$peak_end,sep="_")
+
+CNCC_peaks$peak_size <- CNCC_peaks$peak_end-CNCC_peaks$peak_start
+CNCC_peaks$peak_id <- paste(CNCC_peaks$chr,CNCC_peaks$peak_start,CNCC_peaks$peak_end,sep="_")
+
+
+# ESC_table <- left_join(ESC_peaks,Prom_annotation_epigenetics,by="ens_id")
+# NSC_table <- left_join(NSC_peaks,Prom_annotation_epigenetics,by="ens_id")
+# CNCC_table <- left_join(CNCC_peaks,Prom_annotation_epigenetics,by="ens_id")
+
+ESC_table <- left_join(ESC_peaks,All_anno,by="ens_id")
+NSC_table <- left_join(NSC_peaks,All_anno,by="ens_id")
+CNCC_table <- left_join(CNCC_peaks,All_anno,by="ens_id")
+
+#write.table(ESC_table,file = 'ESC_table_with_prom_annotations.csv', col.names = NA, sep=",",quote = F)
+#write.table(NSC_table,file = 'NSC_table_with_prom_annotations.csv', col.names = NA, sep=",",quote = F)
+#write.table(CNCC_table,file = 'CNCC_table_with_prom_annotations.csv', col.names = NA, sep=",",quote = F)
+
+#ESC_table1 <- ESC_table %>% dplyr::select(ens_id,peak_id,peak_size,ESC_bival,ESC_H3K4me3,ESC_H3K27me3,CNCC_bival,CNCC_H3K4me3,CNCC_H3K27me3,NSC_bival,NSC_H3K4me3,NSC_H3K27me3) 
+ESC_table1 <- ESC_table %>% dplyr::select(ens_id,peak_id,peak_size,ESC_bival,ESC_H3K4me3,ESC_H3K27me3,CNCC_bival,CNCC_H3K4me3,CNCC_H3K27me3,NSC_bival,NSC_H3K4me3,NSC_H3K27me3) 
+ESC_table1_extended <- mutate(ESC_table1,cell_epi_type= ifelse(ESC_bival >0 ,'ESC_bival',ifelse(ESC_H3K4me3>0,'ESC_K4',ifelse(ESC_H3K27me3>0,'ESC_K27','NA'))))
+
+ESC_table1_extended <- mutate(ESC_table1,cell_epi_type= ifelse(ESC_bival >0 ,'ESC_bival',ifelse(ESC_H3K4me3>0,'ESC_K4',ifelse(ESC_H3K27me3>0,'ESC_K27','NA'))))
+
+data_temp <- dim(ESC_table)
+
+ 
+data_frame_bival <- data.frame(p_sizes = c(ESC_table$peak_size[which(ESC_table$ESC>0)],
+                                           NSC_table$peak_size[which(NSC_table$NSC_bival>0)],
+                                           CNCC_table$peak_size[which(CNCC_table$CNCC_bival>0)]),
+                               cell_type = c(rep('ESC',length(which(ESC_table$ESC_bival>0))),
+                                             rep('NSC',length(which(NSC_table$NSC_bival>0))),
+                                             rep('CNCC',length(which(CNCC_table$CNCC_bival>0)))))
+
+data_frame_K4 <- data.frame(p_sizes = c(ESC_table$peak_size[which(ESC_table$ESC_H3K4me3>0)],
+                                           NSC_table$peak_size[which(NSC_table$NSC_H3K4me3>0)],
+                                           CNCC_table$peak_size[which(CNCC_table$CNCC_H3K4me3>0)]),
+                               cell_type = c(rep('ESC',length(which(ESC_table$ESC_H3K4me3>0))),
+                                             rep('NSC',length(which(NSC_table$NSC_H3K4me3>0))),
+                                             rep('CNCC',length(which(CNCC_table$CNCC_H3K4me3>0)))))
+
+data_frame_K27 <- data.frame(p_sizes = c(ESC_table$peak_size[which(ESC_table$ESC_H3K27me3>0)],
+                                           NSC_table$peak_size[which(NSC_table$NSC_H3K27me3>0)],
+                                           CNCC_table$peak_size[which(CNCC_table$CNCC_H3K27me3>0)]),
+                               cell_type = c(rep('ESC',length(which(ESC_table$ESC_H3K27me3>0))),
+                                             rep('NSC',length(which(NSC_table$NSC_H3K27me3>0))),
+                                             rep('CNCC',length(which(CNCC_table$CNCC_H3K27me3>0)))))
+
+
+data_frame_K27 %>% group_by(cell_type) %>%summarise_each(funs(median)) %>% gather(Var, Val, -vs) %>%
+    ggplot(., aes(x=Var, y=Val, fill=vs))+
+    geom_bar(stat='identity', position='dodge')
+ESC_table1_extended <- mutate(ESC_table1_extended,NSC_epi_type= ifelse(NSC_bival >0 ,'NSC_bival',ifelse(NSC_H3K4me3>0,'NSC_K4',ifelse(NSC_H3K27me3>0,'NSC_K27','NA'))))
+ESC_table1_extended <- mutate(ESC_table1_extended,NSC_epi_type= ifelse(NSC_bival >0 ,'NSC_bival',ifelse(NSC_H3K4me3>0,'NSC_K4',ifelse(NSC_H3K27me3>0,'NSC_K27','NA'))))
+
+pdf('BG4_peakSize_at_bivalent_cell_specific.pdf')
+p <- data_frame_bival %>% ggplot(aes(y=p_sizes,x=cell_type )) +geom_boxplot() +ylim(0,500) + ggtitle("BG4 peaks at bivalent promoters")
+print(p)
+dev.off()
+
+pdf('BG4_peakSize_at_K4_cell_specific.pdf')
+p <- data_frame_K4 %>% ggplot(aes(y=p_sizes,x=cell_type )) +geom_boxplot() +ylim(0,500) + ggtitle("BG4 peaks at H3K4me3 promoters")
+print(p)
+dev.off()
+
+pdf('BG4_peakSize_at_K27_cell_specific.pdf')
+p <- data_frame_K27 %>% ggplot(aes(y=p_sizes,x=cell_type )) +geom_boxplot() +ylim(0,500) + ggtitle("BG4 peaks at H3K27me3 promoters")
+print(p)
+dev.off()
+
+```
+
+
+
+```{bash, eval = F}
+# for the confirmed peaks generate list of transcripts that have TSS in BG4 peaks
+# tss-bed file
+tss=~/reference_genomes/hg38/gencode.v28.TSS.bed
+path_analysis=~/Data/Katie_high_level_analysis_Oct2019
+scenario=(scenario1_multi2 scenario2_5out9 scenario3_multi2_extended_1kb)
+for case in ${scenario[@]}
+  do
+  cd $path_analysis/$case
+  esc_bed=`ls ES*.bed`
+  nsc_bed=`ls NSC*.bed`
+  cncc_bed=`ls CNCC*.bed`
+  mkdir gene_lists
+  #intersect with TSS and extract list of genes 
+  intersectBed -a $tss -b $esc_bed -wa | sort | uniq | cut -f 4 | sed 's/["\;]//g' |sed  's/\..*//g' > ./gene_lists/ESC.tss_in_BG4peaks.txt
+  intersectBed -a $tss -b $esc_bed -wa | sort | uniq | cut -f 4 | sed 's/["\;]//g' > ./gene_lists/ESC.noEnsVer.tss_in_BG4peaks.txt
+  intersectBed -a $tss -b $nsc_bed -wa | sort | uniq | cut -f 4 | sed 's/["\;]//g' |sed  's/\..*//g' > ./gene_lists/NSC.tss_in_BG4peaks.txt
+  intersectBed -a $tss -b $nsc_bed -wa | sort | uniq | cut -f 4 | sed 's/["\;]//g' > ./gene_lists/NSC.noEnsVer.tss_in_BG4peaks.txt
+  intersectBed -a $tss -b $cncc_bed -wa | sort | uniq | cut -f 4 | sed 's/["\;]//g' |sed  's/\..*//g' > ./gene_lists/CNCC.tss_in_BG4peaks.txt
+  intersectBed -a $tss -b $cncc_bed -wa | sort | uniq | cut -f 4 | sed 's/["\;]//g' > ./gene_lists/CNCC.noEnsVer.tss_in_BG4peaks.txt
+done
+
+```
+
+#run topGO gene enrichment analysis
+
+```{R, eval = F}
+require(DOSE)
+require(clusterProfiler)
+source('/stem_cells//GOenrichment_topgo_2lists.R')
+#cut -f 4 gencode.v28.TSS.bed |sed 's/["\;]//g' |sed  's/\..*//g' | sort | uniq > gencode.v28.TSS.geneEns.txt
+all_genes <- read.table('/Users/simeon01/Documents/genomes/hg38/gencode.v28.TSS.geneEns.txt',stringsAsFactors = F)
+path_list_files <- "/stem_cells//broad/scenario1_multi2/gene_lists/"
+list_ens_files <- list.files(path_list_files,pattern = 'BG4peaks.txt')
+
+for (i in 1:length(list_ens_files)) {
+  print(list_ens_files[i])
+  list_ensembl <- read.table(paste0(path_list_files,list_ens_files[i]), stringsAsFactors = F)
+  GO_BP<- GOenrichment_topgo(list_ensembl$V1)
+  write.table(GO_BP$filteredRed,file=paste0(path_list_files,gsub('.txt','.topGO.BP.txt',list_ens_files[i])), col.names = NA, sep='\t',quote = F)
+  write.table(GO_BP$allRes_BP,file=paste0(path_list_files,gsub('.txt','.all.res.topGO.BP.txt',list_ens_files[i])), col.names = NA, sep='\t',quote = F)
+  david<- enrichDAVID(gene = list_ensembl$V1, idType="ENSEMBL_GENE_ID", annotation="GOTERM_BP_FAT",
+                                               david.user="angela.simeone@cruk.cam.ac.uk")
+  pdf(paste0(path_list_files,gsub('.txt','.all.res.DAVID.bp_fat.pdf',list_ens_files[i])))
+    barplot(david)
+  dev.off()
+  rm(list_ensembl)
+  
+}
+
+for (i in 1:length(list_ens_files)) {
+  print(list_ens_files[i])
+  rm(david,list_ensembl)
+  list_ensembl <- read.table(paste0(path_list_files,list_ens_files[i]), stringsAsFactors = F)
+  david<- enrichDAVID(gene = list_ensembl$V1, idType="ENSEMBL_GENE_ID", annotation="GOTERM_BP_FAT",
+                                               david.user="angela.simeone@cruk.cam.ac.uk")
+  pdf(paste0(path_list_files,gsub('.txt','.all.res.DAVID.bp_fat.pdf',list_ens_files[i])), 20,10)
+      barplot(david,showCategory=50)
+  dev.off()
+}
+
+# path_list_files <- "/stem_cells//broad/scenario1_multi2/coverage_peaks/"
+# list_ens_files <- list.files(path_list_files,pattern = 'TSS.ENS.txt')
+path_list_files <- "/stem_cells//broad/scenario1_multi2/gene_lists/"
+list_ens_files <- list.files(path_list_files,pattern = 'BG4peaks.txt')
+
+for (i in 1:length(list_ens_files)) {
+  print(list_ens_files[i])
+  rm(david, david_all,list_ensembl)
+  list_ensembl <- read.table(paste0(path_list_files,list_ens_files[i]), stringsAsFactors = F)
+  #david<- enrichDAVID(gene = list_ensembl$V1, idType="ENSEMBL_GENE_ID", annotation="GOTERM_BP_FAT",david.user="angela.simeone@cruk.cam.ac.uk")
+  david_all<- enrichDAVID(gene = list_ensembl$V1, idType="ENSEMBL_GENE_ID", annotation="GOTERM_BP_ALL",david.user="angela.simeone@cruk.cam.ac.uk")
+  # pdf(paste0(path_list_files,gsub('.txt','.all.res.DAVID.bp_fat.pdf',list_ens_files[i])), 20,10)
+  #     bb <- barplot(david,showCategory=50)
+  #     print(bb)
+  # dev.off()
+  
+  pdf(paste0(path_list_files,gsub('.txt','.all.res.DAVID.bp_all.pdf',list_ens_files[i])), 20,10)
+      bb <- barplot(david_all,showCategory=50)
+      print(bb)
+  dev.off()
+}
+
+```
+
+
+
+## Additional external data to download and process (peak detection) and fold enrichment analysis (chromatin architecture elements)
+
+```{bash, eval =F}
+mkdir /mnt~/Data/Katie_high_level_analysis_Oct2019/GEO_series_GSE105028
+
+#IgG
+wget ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816613/suppl/GSM2816613%5FIgG%5FNT%2Ebw
+
+#RAD21
+ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE105nnn/GSE105028/suppl/GSE105028%5FRad21%5FNT%2Ebw
+
+# atac
+ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE105nnn/GSE105028/suppl/GSE105028%5FATAC%2DSeq%2Ebw
+
+# H3K27ac
+ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE105nnn/GSE105028/suppl/GSE105028%5FH3K27ac%5FNT%2Ebw
+
+#H3K27me3
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816652/suppl/GSM2816652%5FH3K27me3%5FNT%2Ebw
+
+#H3K4me1
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816654/suppl/GSM2816654%5FH3K4me1%5FNT%2Ebw
+
+#H3K4me3
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816656/suppl/GSM2816656%5FH3K4me3%5FNT%2Ebw
+
+#OCT4
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816629/suppl/GSM2816629%5FOCT4%5FNT%2Ebw
+
+#NANOG
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816625/suppl/GSM2816625%5FNANOG%5FNT%2Ebw
+
+#KLF4
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816627/suppl/GSM2816627%5FKLF4%5FNT%2Ebw
+
+#ZNF143
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816621/suppl/GSM2816621%5FZNF143%5FNT%2Ebw
+
+#pol2
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816623/suppl/GSM2816623%5FPolII%5FNT%2Ebw
+
+#RING1B
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816631/suppl/GSM2816631%5FRING1B%5FNT%2Ebw
+
+#cFos
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816633/suppl/GSM2816633%5FcFos%5FNT%2Ebw
+
+#Brg1
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816635/suppl/GSM2816635%5FBrg1%5FNT%2Ebw
+
+#HSF1
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816637/suppl/GSM2816637%5FHSF1%5FNT%2Ebw
+
+#WAPL
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816640/suppl/GSM2816640%5FWAPL%5FNT%2Ebw
+
+#NIPBL
+ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2816nnn/GSM2816642/suppl/GSM2816642%5FNIPBL%5FNT%2Ebw
+
+## convert bigwig to bedgraph
+cd  /mnt~/Data/Katie_high_level_analysis_Oct2019/GEO_series_GSE105028
+
+for file in *bw
+do 
+sbatch --mem 12G --wrap "/Users/simeon01/applications/bigWigToBedGraph $file ${file%%.bw}.bedgraph"
+done
+
+cd /mnt~/Data/Katie_high_level_analysis_Oct2019/GEO_series_GSE105028
+mkdir macs2_output
+for file in *bedgraph
+do
+  sbatch --mem 12G --wrap "macs2 bdgpeakcall -i $file -c 0.7 -l 300 -g 100 -o ./macs2_output/${file%%.bedgraph}_narrowPeaks.bed"
+done
+
+
+# reerun macs2 peaks calls with different thredhols for histone modifications - transcription factors - architecture proteeins
+ cd /mnt~/Data/Katie_high_level_analysis_Oct2019/GEO_series_GSE105028
+for file in *H3K*bedgraph
+do
+  sbatch --mem 12G --wrap "macs2 bdgpeakcall -i $file -c 0.5 -l 300 -g 100 -o ./macs2_output/${file%%.bedgraph}_narrowPeaks.bed"
+done
+
+for file in `ls *bedgraph | grep -v H3K`
+do
+  sbatch --mem 12G --wrap "macs2 bdgpeakcall -i $file -c 0.6 -l 300 -g 100 -o ./macs2_output/${file%%.bedgraph}_narrowPeaks.bed"
+done
+
+
+# for bed in 150 proximity merge bed files
+for file in *.bed
+do
+  sbatch --mem 4G --wrap "sortBed -i $file | mergeBed -i - -d 150 | sortBed -i - > ${file%%.bed}.merged_d150.bed"
+done
+
+# for all merged files create annotations bed files (intervals and name of the annotation)
+
+temp_annotation=chromatin_architecture_elements.annotation.bed
+touch $temp_annotation
+for file in *merged_d150.bed
+do
+label_temp=${file%%_[nN]*}
+echo $label_temp
+label=${label_temp#GS*_}
+echo $label
+echo " == "
+awk -v a="$label" '{print $1"\t"$2"\t"$3"\t"a}' $file >> $temp_annotation
+done
+# note:
+# GSM2816625 is NANOG
+# GSM2816642 is NIPBL
+
+temp_annotation_nexus=chromatin_architecture_elements.ChIPNexus.annotation.bed
+touch $temp_annotation
+#~/Data/Katie_high_level_analysis_Oct2019/GEO_series_GSE105028/ChIPNexus
+awk '{print $0"\tCTCF"}' GSM2816644_CTCF_ChIPNexus_peaks.bed >>$temp_annotation_nexus
+awk '{print $0"\tRAD21"}' GSM2816646_Rad21_ChIPNexus_peaks.bed >>$temp_annotation_nexus
+
+
+# run gat analysis on this newly generated annotation file containing the chromatin architecture elements
+
+
+cd ~/Data/Katie_high_level_analysis_Oct2019
+katie_path=~/Data/Katie_high_level_analysis_Oct2019
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+scenario=(scenario1_multi2 scenario2_5out9 scenario3_multi2_extended_1kb)
+annotation_path=/mnt~/Data/Katie_high_level_analysis_Oct2019/GEO_series_GSE105028/macs2_output
+annotation_chrom_architecture=(chromatin_architecture_elements.annotation.bed)
+for case in ${scenario[@]}
+do
+  cd $katie_path/$case
+  pwd
+  mkdir Chromatine_architecture_enrichments_$case
+  # run gat analysis on full bed files 
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_chrom_architecture[@]}
+    do
+      echo $anno
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$annotation_path/${anno} --segments=${file} -S ./Chromatine_architecture_enrichments_$case/${file%%.bed}_${anno%%.bed}.txt -t 4"
+      echo ${file%%.bed}_${anno%%.bed}.txt
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+      
+    #sbatch --mem 6G --wrap "$cmd_gat"
+    done
+  done
+  #zip -r CpG_fold_enrichments_$case.zip CpG_fold_enrichments_$case
+done
+
+## ChIP-nexus
+cd ~/Data/Katie_high_level_analysis_Oct2019
+katie_path=~/Data/Katie_high_level_analysis_Oct2019
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+scenario=(scenario1_multi2 scenario2_5out9 scenario3_multi2_extended_1kb)
+annotation_path=~/Data/Katie_high_level_analysis_Oct2019/GEO_series_GSE105028/ChIPNexus
+annotation_chrom_architecture=(chromatin_architecture_elements.ChIPNexus.annotation.bed)
+for case in ${scenario[@]}
+do
+  cd $katie_path/$case
+  pwd
+  mkdir Chromatine_architecture_enrichments_$case
+  # run gat analysis on full bed files 
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_chrom_architecture[@]}
+    do
+      echo $anno
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$annotation_path/${anno} --segments=${file} -S ./Chromatine_architecture_enrichments_$case/${file%%.bed}_${anno%%.bed}.txt -t 4"
+      echo ${file%%.bed}_${anno%%.bed}.txt
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+      
+    #sbatch --mem 6G --wrap "$cmd_gat"
+    done
+  done
+  #zip -r CpG_fold_enrichments_$case.zip CpG_fold_enrichments_$case
+done
+
+
+zip -r Chromatine_architecture_enrichments_scenario1_multi2.zip Chromatine_architecture_enrichments_scenario1_multi2
+
+bedtools makewindows -g hg38_selected.sorted.genome -w 500 > hg38_selected.500bp_windows.bed
+
+```
+
+## Check fold enrichment of BG4 peaks at CpG methylation sites
+
+```{bash, eval = F}
+
+tail -n +2 pnas.1613300114.sd02_hESC_eexported.csv | head -n 2 > pnas.1613300114.sd02_hESC_eexported_rearranged.csv
+
+cut -d "," -f 1,2,3,18 pnas.1613300114.sd02_hESC_eexported_rearranged.csv | sed 's/\,/\t/g' | tail -n +2 > pnas.1613300114.sd02_hESC_eexported_rearranged.bed
+
+#lifover to hg38
+chain_hg19_to_hg38=~/reference_genomes/liftover_chain/hg19ToHg38.over.chain.gz
+/Users/simeon01/applications/liftOver pnas.1613300114.sd02_hESC_eexported_rearranged.bed $chain_hg19_to_hg38 pnas.1613300114.sd02_hESC_eexported_rearranged.hg38.bed  pnas.1613300114.sd02_hESC_eexported_rearranged.unmapped
+
+#CpG island only
+awk '{print $1"\t"$2"\t"$3"\tCpG"}' hg38_GRC38_ucsc_CpG.bed > hg38_GRC38_ucsc_CpG_annotations.bed
+```
+
+Run enrichment over all methylation sites
+
+```{bash, eval = F}
+
+cd ~/Data/Katie_high_level_analysis_Oct2019
+katie_path=~/Data/Katie_high_level_analysis_Oct2019
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+scenario=(scenario1_multi2 scenario2_5out9 scenario3_multi2_extended_1kb)
+annotation_path=~/Data/Katie_high_level_analysis_Oct2019/CpG_island
+annotation_CpG=(pnas.1613300114.sd02_hESC_eexported_rearranged.hg38.bed hg38_GRC38_ucsc_CpG_annotations.bed)
+for case in ${scenario[@]}
+do
+  cd $katie_path/$case
+  pwd
+  mkdir CpG_fold_enrichments_$case
+  # run gat analysis on full bed files 
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_CpG[@]}
+    do
+      echo $anno
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$annotation_path/${anno} --segments=${file} -S ./CpG_fold_enrichments_$case/${file%%.bed}_${anno%%.bed}.txt -t 4"
+      echo ${file%%.bed}_${anno%%.bed}.txt
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+      
+    #sbatch --mem 6G --wrap "$cmd_gat"
+    done
+  done
+  #zip -r CpG_fold_enrichments_$case.zip CpG_fold_enrichments_$case
+done
+
+for case in ${scenario[@]}
+do
+  cd $katie_path/$case
+  zip -r CpG_fold_enrichments_$case.zip CpG_fold_enrichments_$case
+done
+
+
+## check total number of overlaps
+
+
+
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+scenario=(scenario1_multi2)
+annotation_path=~/Data/Katie_high_level_analysis_Oct2019/CpG_island
+annotation_CpG=(pnas.1613300114.sd02_hESC_eexported_rearranged.hg38.annotations.bed hg38_GRC38_ucsc_CpG_annotations.bed)
+
+for case in ${scenario[@]}
+do
+  cd $katie_path/$case
+  echo "** ==================================================== ** "
+  pwd
+  for file in *bed
+  do
+    wc -l $file
+    for anno in ${annotation_CpG[@]}
+    do
+      echo $anno
+      intersectBed -a $file -b $annotation_path/$anno -wa | sort | uniq | wc -l
+      echo "==="
+    done
+  done
+done
+
+```
+
+## BG4 coverage at promoters
+
+```{bash,eval = F}
+
+promoters=~/reference_genomes/hg38/gencode.v28.TSS_plus_1kb.bed
+Bam_repA=~/Data/190829_Katie_stemcells/SLX-18496/aligned #.hg38.sort.markduplicates.bam
+Bam_repB=~/Data/20190913_SLX18495_Katie_StemCell_Rep3_3xBG4/aligned/merged # markduplicates.bam
+Bam_repC=~/Data/20190917_SLX-18355_Katie_StemCells_Rep2_3xBG4/SLX-18355/aligned #.hg38.sort.markduplicates.bam
+
+#./peaks_coverages
+#./promoter_coverages
+
+#loop over scenario in order to run coverages -  for the moment I run it only for scenario1
+bam_folders=($Bam_repA $Bam_repB $Bam_repC)
+scenario=(scenario1_multi2)
+path_analysis=~/Data/Katie_high_level_analysis_Oct2019
+for case in ${scenario[@]}
+  do
+  cd $path_analysis/$case
+  
+  out_dir=$path_analysis/$case/bed_merge_all/promoter_coverage_peaks
+  mkdir $out_dir
+  echo $bed_all_peaks
+  for folder_bam in ${bam_folders[@]}
+    do
+    cd $folder_bam
+    pwd
+    for bam in `ls *.markduplicates.bam`
+      do
+      echo $bam
+      pwd
+      echo sbatch --mem 8G -o %j.log.out -e %j.log.err --wrap "bedtools coverage -a $promoters -b $bam  -counts > $out_dir/${bam%%.bam}.bg4_at_promoters.bedgraph"
+      sbatch --mem 8G -o %j.log.out -e %j.log.err --wrap "bedtools coverage -a $promoters -b $bam  -counts > $out_dir/${bam%%.bam}.bg4_at_promoters.bedgraph"
+      echo "   "
+      done
+  
+    done
+  
+  done
+```
+  
+## Differential binding analysis at promoter
+
+```{R,eval = F}
+## == fuctions  and packages ==
+library(dendextend)
+library(dplyr)
+library(ggdendro)
+library(ggplot2)
+library(biomaRt)
+library(fgsea)
+
+
+pathways.hallmark <- gmtPathways("/Users/simeon01/Documents/genomes/hg38/c2.cp.v7.0.entrez.gmt.txt")
+go_anno <- gmtPathways("/Users/simeon01/Documents/genomes/hg38/c5.all.v7.0.entrez.gmt.txt")
+short_sequence_motifs <- gmtPathways("/Users/simeon01/Documents/genomes/hg38/c3.all.v7.0.entrez.gmt.txt")
+oncogenic_signatures <- gmtPathways("/Users/simeon01/Documents/genomes/hg38/c6.all.v7.0.entrez.gmt.txt")
+immunologic_signatures <- gmtPathways("/Users/simeon01/Documents/genomes/hg38/c7.all.v7.0.entrez.gmt.txt")
+
+tss_file <- '/Users/simeon01/Documents/genomes/hg38/gencode.v28.TSS.bed'
+source('/Users/simeon01/Documents/Karen/20190613_Karen_continue_pol2_G4_maps/G4_signal_DRB/function_to_export_tables.R')
+source('/stem_cells//broad/scenario1_multi2/promoter_coverage_peaks/GOenrichment_topgo_all.R')
+norm_sign_to_tot_map_reads <- function(matrix,list_stat5_mapped_reads){
+  Library_sizes <- c()
+  matrix_norm <- matrix
+  for (i in 1:dim(matrix)[2]){
+    print(i)
+    tmp_cond <- colnames(matrix)[i]
+    tmp_cond <- gsub('.union_bg4_peaks','',tmp_cond)
+    print(tmp_cond)
+    tmp_stat <- grep(substr(tmp_cond,1,20),list_stat5_mapped_reads,value = T)
+    tot_reads <- as.numeric(system(paste0('cat ',tmp_stat),intern = TRUE))
+    Library_sizes[i] <- tot_reads
+    matrix_norm[,i] <- matrix[,i]/tot_reads*1e6
+  }
+  names(Library_sizes) <- colnames(matrix)
+  NewList <- list("norm_cpm_M" = matrix_norm, "lib_size" = Library_sizes)
+  return(NewList)
+}
+
+#################################################
+# load data
+#################################################
+setwd("/stem_cells//broad/scenario1_multi2/promoter_coverage_peaks")
+list_files <- list.files(path = ".",pattern = 'bg4_at_promoters.bedgraph')
+
+Matrix_cov <- matrix(ncol = length(list_files), nrow = 58381)
+for (i in 1:length(list_files)) {
+  temp <- read.table(list_files[i],stringsAsFactors = F)
+  Matrix_cov[,i] <- temp$V8
+  peaks_coordinates <- temp[,c(1,2,3)]
+}
+colnames(Matrix_cov) <-list_files
+rownames(Matrix_cov) <-temp$V4
+colnames(Matrix_cov) <- gsub('.markduplicates','',list_files)
+
+
+# specific samples need to be removed
+colnames(Matrix_cov)[]
+
+#Matrix_cov_selected <- Matrix_cov[,-c(33,37,39,40)]
+
+setwd('/stem_cells//broad/scenario1_multi2/coverage_peaks')
+stat5_files <- list.files(path = ".", pattern = "stat5")
+#
+norm_Matrix_cov_selected <- norm_sign_to_tot_map_reads(Matrix_cov,stat5_files)
+setwd("/stem_cells//broad/scenario1_multi2/promoter_coverage_peaks")
+
+## == clustering raw data == 
+
+# # clustering - row data
+pdf('hclust_raw_counts.promoter.pdf')
+h_Matrix_cov <- hclust(dist(t(Matrix_cov)),method="ward.D2")
+p <- ggdendrogram(h_Matrix_cov,rotate=T) +  ggtitle('clustering - raw counts')
+print(p)
+dev.off()
+
+## == clustering - data norm to total number of reads == 
+pdf('hclust_RPM.promoter.pdf')
+h_norm_Matrix_cov_selected <- hclust(dist(t(norm_Matrix_cov_selected$norm_cpm_M)),method="ward.D2")
+p <- ggdendrogram(h_norm_Matrix_cov_selected,rotate=T) +  ggtitle('clustering - RPM')
+print(p)  
+dev.off()
+
+## == clustering - data norm to total number of reads -- NO INPUT == 
+pdf('hclust_RPM_no_input.promoter.pdf')
+h_norm_Matrix_cov_selected_noInput <- hclust(dist(t(norm_Matrix_cov_selected$norm_cpm_M[,-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))])),method="ward.D2")
+p <- ggdendrogram(h_norm_Matrix_cov_selected_noInput,rotate=T) +  ggtitle('clustering - RPM - no input')
+print(p)  
+dev.off()
+
+## == clustering - data norm to total number of reads -- NO INPUT == 
+pdf('hclust_RPM_no_input_excluding_low10percent.promoter.pdf')
+A <- norm_Matrix_cov_selected$norm_cpm_M[,-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+A_sum <- rowSums(A)
+hist(A_sum)
+summary(A_sum)
+quantile(A_sum, 0.1)
+A_selected <- A[A_sum<quantile(A_sum, 0.1),]
+h_A_selected <- hclust(dist(t(A_selected)),method="ward.D2")
+p <- ggdendrogram(h_A_selected,rotate=T) +  ggtitle('clustering - RPM - no input')
+plot(p)
+dev.off()
+
+pdf('hclust_RPM_no_input_excluding_NOlow10percent_NOTop10percent.pdf')
+A <- norm_Matrix_cov_selected$norm_cpm_M[,-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+A_sum <- rowSums(A)
+hist(A_sum)
+summary(A_sum)
+quantile(A_sum, 0.1)
+A_selected <- A[A_sum>quantile(A_sum, 0.1) & A_sum<quantile(A_sum, 0.9) ,]
+#A_selected <- A[A_sum>quantile(A_sum, 0.5) ,]
+h_A_selected <- hclust(dist(t(A_selected)),method="ward.D2")
+p <- ggdendrogram(h_A_selected,rotate=T) +  ggtitle('clustering - RPM - no input')
+plot(p)
+dev.off()
+
+## == visualize as heatmap == 
+#set.seed(123)
+#Heatmap(mat)
+#Heatmap(A[A_sum>quantile(A_sum, 0.1) & A_sum<quantile(A_sum, 0.9) ,],show_row_names =F)
+
+#################################
+# Differential analysis
+#################################
+
+# in the differential analysis we will account for:
+# bio rep [4 different ones]
+# technical rep [3 tech rep]
+# condition [3 different cell lines]
+
+# create variables
+#A_selected <- A[A_sum<quantile(A_sum, 0.1),]
+#Counts_to_use_all <- A_selected
+colnames(Matrix_cov)[-c(c(33,37),grep('input',colnames(Matrix_cov)))]
+Matrix_cov_selected <- Matrix_cov[,-c(c(33,37),grep('input',colnames(Matrix_cov)))]
+Counts_to_use_all <- Matrix_cov_selected
+colnames(Counts_to_use_all)
+conditions <- c(rep('CNCC',9),rep('ESC',9),rep('NSC',9))
+conditions
+# "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "CNCC" "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "ESC"  "NSC"  "NSC"  "NSC"  "NSC" 
+# [23] "NSC"  "NSC"  "NSC"  "NSC"  "NSC" 
+#      
+conditions <- factor(conditions) # there are 4 factors
+
+conditions <- relevel(conditions,ref="ESC") # relevel as reference base the condition no_TPL_1hr_no_dm6
+
+
+bio_rep <- rep(c(rep(1,3), rep(2,3), rep(3,3)),3)
+bio_rep <- factor(bio_rep)
+bio_rep
+#[1] 1 1 1 2 2 2 3 3 3 1 1 1 2 2 2 3 3 3 1 1 1 2 2 2 3 3 3
+#Levels: 1 2 3
+
+
+tec_rep <- rep(1:3,9)
+tec_rep <- factor(tec_rep)
+# lib_size: norm_Matrix_cov_selected$lib_size[-grep('input',colnames(norm_Matrix_cov_selected$norm_cpm_M))]
+curr_lib_size <- norm_Matrix_cov_selected$lib_size[-c(c(33,37),grep('input',colnames(Matrix_cov)))]
+design_blocking <- model.matrix(~ bio_rep + tec_rep + conditions)
+design <- model.matrix(~conditions)
+colnames(design_blocking)
+# [1]  "(Intercept)"    "bio_rep2"       "bio_rep3"       "tec_rep2"       "tec_rep3"       "conditionsCNCC" "conditionsNSC" 
+
+# create EdgeR object
+library(edgeR)
+y <- DGEList(counts = Counts_to_use_all, group= conditions)
+stopifnot(rownames(y$samples) == names(curr_lib_size))
+y$samples$lib.size<- curr_lib_size
+
+y <- calcNormFactors(y, method= 'none')
+y <- estimateDisp(y,design_blocking)
+y <- estimateGLMCommonDisp(y,design_blocking)
+y <- estimateGLMTagwiseDisp(y,design_blocking)
+
+
+# check MDS plot
+pdf('MDS_edger_mdsplot_stem_cells.promoter.pdf', 7, 7)
+par(las= 1, cex=1.2)
+col_map <- conditions
+levels(col_map) <- 1:length(levels(col_map))
+col_map <- as.numeric(conditions)
+temp_rainbow <- rainbow(3)
+col_map_rainbow <- temp_rainbow[col_map]
+plotMDS(y,
+        #pch=c(0,3,0,3,0,3),
+        #xlim=c(-3,3), ylim= c(-0.5,0.5), 
+        xlim=c(-1.5,1.5), ylim= c(-1,0.7), 
+        #xaxp= c(-40, 40, 8),  yaxp= c(-10,10, 8),
+        labels= paste(y$samples$group,bio_rep, sep= '--'),
+        col=col_map_rainbow,
+        main= 'MDS plot ', cex= 0.7)
+grid()
+dev.off()
+
+pdf('MDS_edger_mdsplot_stem_cells_symb.promoter.pdf', 7, 7)
+ par(las= 1, cex=1.2)
+col_map <- conditions
+levels(col_map) <- 1:length(levels(col_map))
+col_map <- as.numeric(conditions)
+temp_rainbow <- rainbow(3)
+col_map_rainbow <- temp_rainbow[col_map]
+plotMDS(y,
+        pch=c(rep(0,9),rep(1,9),rep(3,9)),
+        #xlim=c(-3,3), ylim= c(-0.5,0.5), 
+        xlim=c(-1.5,1.5), ylim= c(-1,0.7), 
+        #xaxp= c(-40, 40, 8),  yaxp= c(-10,10, 8),
+        #labels= paste(y$samples$group,bio_rep, sep= '--'),
+        col=col_map_rainbow,
+        main= 'MDS plot ', cex= 0.7)
+
+grid()
+dev.off()
+
+pdf('PCA2_edger_mdsplot_stem_cells.promoter.pdf', 9, 7)
+pcaResult<-prcomp(t(y$counts))
+plot(pcaResult$x,
+     main= 'Principal components, counts',
+     xlab="PC1",
+     ylab="PC2",
+     #xlab= sprintf('PC1 (sd: %s%%)', round(100 * (pcaResult$sdev[1] / sum(pcaResult$sdev)))),
+     #ylab= sprintf('PC2 (sd: %s%%)', round(100 * (pcaResult$sdev[2] / sum(pcaResult$sdev)))),
+     type= 'n')
+text(x= pcaResult$x[,1], y= pcaResult$x[,2], labels= paste(y$samples$group,bio_rep, sep= '--'), cex= 0.9, 
+     #col= c(rep('#CCFF00FF',5),rep('#00FF66FF',5),rep('#FF0000FF',5)))
+     col = col_map_rainbow)
+dev.off()
+
+
+# fit the generalized linear model (quasi-likelihood negative binomial generalized log-linear model)
+fit <- glmQLFit(y, design_blocking)
+colnames(fit)
+source('/stem_cells//broad/scenario1_multi2/promoter_coverage_peaks/perform_annotation_and_enrichment_analysis.R')
+# "(Intercept)"    "bio_rep2"       "bio_rep3"       "tec_rep2"       "tec_rep3"       "conditionsCNCC" "conditionsNSC" 
+
+## ==  CNCC vs ESC 
+N_condition <- 6
+
+colnames(fit)[N_condition]
+
+label_case <-  paste0(colnames(fit)[N_condition],"_vs_ESC")
+
+qlf.CNCC_vs_ESC <- glmQLFTest(fit, coef=N_condition) 
+
+de_pairing_CNCC_vs_ESC <- topTags(qlf.CNCC_vs_ESC, n= nrow(y$counts))$table
+
+de_pairing_CNCC_vs_ESC$ens_id <- gsub('\\..*','',rownames(de_pairing_CNCC_vs_ESC))
+
+write.table(de_pairing_CNCC_vs_ESC,file = paste0('EdgeRtable_differential_binding_analysis_',label_case,'.csv'), col.names = NA,sep = ",",quote = F)
+
+
+res_CNCC_vs_ESC01 <- decideTestsDGE(qlf.CNCC_vs_ESC,adjust.method="BH", p.value = 0.1,lfc=0)
+summary(res_CNCC_vs_ESC01)
+
+res_CNCC_vs_ESC <- decideTestsDGE(qlf.CNCC_vs_ESC,adjust.method="BH", p.value = 0.05,lfc=0)
+
+summary(res_CNCC_vs_ESC)
+
+Table_GSEA_CNCC_vs_ESC <- data.frame( ensembl_gene_id= gsub('\\..*','',rownames(de_pairing_CNCC_vs_ESC)),
+                                      metric=-log10(de_pairing_CNCC_vs_ESC$PValue)/sign(de_pairing_CNCC_vs_ESC$logFC))
+
+
+#write.table(Table_GSEA_CNCC_vs_ESC,file='Table_GSEA.CNCC_vs_ESC.ESCspecific.rnk',quote = F, sep = "\t",col.names = F,row.names = F)
+
+Res_fgsea_CNCC_vs_ESC <- perform_annotation_and_enrichment_analysis(Table_GSEA_CNCC_vs_ESC)
+
+explort_fsga_tables_to_txt(label_case,Res_fgsea_CNCC_vs_ESC)
+# plotEnrichment(go_anno[["GO_EPITHELIUM_DEVELOPMENT"]],
+#                 Res_fgsea_CNCC_vs_ESC$ranks) + labs(title="GO_EPITHELIUM_DEVELOPMENT")
+
+pdf(paste0('MD_MA_plot_differential_binding_analysis_',label_case,'.pdf'),8,7)
+plotMD(qlf.CNCC_vs_ESC,status = res_CNCC_vs_ESC,values =c(1,0,-1),col=c("red","black","blue"))
+title(paste0("\n\nDEup:",length(which(res_CNCC_vs_ESC==1)),
+             " - DEdown: ",length(which(res_CNCC_vs_ESC==-1)),
+             " - notDE: ",length(which(res_CNCC_vs_ESC==0))))
+dev.off()
+
+## ==  NSC vs ESC 
+N_condition <- 7
+
+colnames(fit)[N_condition]
+
+label_case <-  paste0(colnames(fit)[N_condition],"_vs_ESC")
+
+qlf.NSC_vs_ESC <- glmQLFTest(fit, coef=N_condition) 
+
+de_pairing_NSC_vs_ESC <- topTags(qlf.NSC_vs_ESC, n= nrow(y$counts))$table
+
+write.table(de_pairing_NSC_vs_ESC,file = paste0('EdgeRtable_differential_binding_analysis_',label_case,'.csv'), col.names = NA,sep = ",",quote = F)
+
+res_NSC_vs_ESC <- decideTestsDGE(qlf.NSC_vs_ESC,adjust.method="BH", p.value = 0.05,lfc=0)
+
+summary(res_NSC_vs_ESC)
+
+Table_GSEA_NSC_vs_ESC <- data.frame( ensembl_gene_id= gsub('\\..*','',rownames(de_pairing_NSC_vs_ESC)),
+                                      metric=-log10(de_pairing_NSC_vs_ESC$PValue)/sign(de_pairing_NSC_vs_ESC$logFC))
+
+
+#write.table(Table_GSEA_CNCC_vs_ESC,file='Table_GSEA.CNCC_vs_ESC.ESCspecific.rnk',quote = F, sep = "\t",col.names = F,row.names = F)
+
+Res_fgsea_NSC_vs_ESC <- perform_annotation_and_enrichment_analysis(Table_GSEA_NSC_vs_ESC)
+
+explort_fsga_tables_to_txt(label_case,Res_fgsea_NSC_vs_ESC)
+# plotEnrichment(go_anno[["GO_EPITHELIUM_DEVELOPMENT"]],
+#                 Res_fgsea_CNCC_vs_ESC$ranks) + labs(title="GO_EPITHELIUM_DEVELOPMENT")
+
+#tss_res_NSC_vs_ESC <- export_bed_and_TSS_in_bed_regions(tss_file,'./',label_case,res_NSC_vs_ESC)
+
+pdf(paste0('MD_MA_plot_differential_binding_analysis_',label_case,'.pdf'),8,7)
+plotMD(qlf.NSC_vs_ESC,status = res_NSC_vs_ESC,values =c(1,0,-1),col=c("red","black","blue"))
+title(paste0("\n\nDEup:",length(which(res_NSC_vs_ESC==1)),
+             " - DEdown: ",length(which(res_NSC_vs_ESC==-1)),
+             " - notDE: ",length(which(res_NSC_vs_ESC==0))))
+dev.off()
+
+## == case NSC vs CNCC
+label_case <-  "NSC_vs_CNCC"
+
+qlf.NSC_vs_CNCC <- glmQLFTest(fit, contrast=c(0,0,0,0,0,-1,1))
+
+de_pairing_NSC_vs_CNCC <- topTags(qlf.NSC_vs_CNCC, n= nrow(y$counts))$table
+
+write.table(de_pairing_NSC_vs_CNCC,file = paste0('EdgeRtable_differential_binding_analysis_',label_case,'.csv'), col.names = NA,sep = ",",quote = F)
+
+res_NSC_vs_CNCC <- decideTestsDGE(qlf.NSC_vs_CNCC,adjust.method="BH", p.value = 0.05,lfc=0)
+
+summary(res_NSC_vs_CNCC)
+
+Table_GSEA_NSC_vs_CNCC <- data.frame( ensembl_gene_id= gsub('\\..*','',rownames(de_pairing_NSC_vs_CNCC)),
+                                      metric=-log10(de_pairing_NSC_vs_CNCC$PValue)/sign(de_pairing_NSC_vs_CNCC$logFC))
+
+
+#write.table(Table_GSEA_CNCC_vs_ESC,file='Table_GSEA.CNCC_vs_ESC.ESCspecific.rnk',quote = F, sep = "\t",col.names = F,row.names = F)
+
+Res_fgsea_NSC_vs_CNCC <- perform_annotation_and_enrichment_analysis(Table_GSEA_NSC_vs_CNCC)
+
+explort_fsga_tables_to_txt(label_case,Res_fgsea_NSC_vs_CNCC)
+#tss_res_NSC_vs_CNCC <- export_bed_and_TSS_in_bed_regions(tss_file,'./',label_case,res_NSC_vs_CNCC)
+
+pdf(paste0('MD_MA_plot_differential_binding_analysis_',label_case,'.pdf'),8,7)
+plotMD(qlf.NSC_vs_CNCC,status = res_NSC_vs_CNCC,values =c(1,0,-1),col=c("red","black","blue"))
+title(paste0("\n\nDEup:",length(which(res_NSC_vs_CNCC==1)),
+             " - DEdown: ",length(which(res_NSC_vs_CNCC==-1)),
+             " - notDE: ",length(which(res_NSC_vs_CNCC==0))))
+dev.off()
+
+
+## ----  save a summary of the findings ---- 
+DBA_outcome_Nregions <- cbind(summary(res_NSC_vs_ESC),
+                              summary(res_CNCC_vs_ESC),
+                             summary(res_NSC_vs_CNCC))
+
+write.table(DBA_outcome_Nregions,file='stem_cells_DBA_outcome_Npromoters.csv',col.names = NA,quote = F, sep = ",")
+```
+
+
+
+
+
+
+## Check relationship between cell-specific and cell common peaks and open chromatin state either in the specific cell line or in the other cell line
+
+```{bash, eval =F}
+
+# I run this check only for scenario1 - for either common or specific sets
+
+#open chromatine in ES is the faire-seq
+open_ESC=~/reference_genomes/epigenetic_annotations_stem_cells/GSM602298_ESC_FAIRE_aligned_reduced_lifted.hg38.bed
+
+#open_chromatine in CNCC 
+open_CNCC=~/reference_genomes/epigenetic_annotations_stem_cells/common_atac_sites_CNCC_liftOver_hg19_hg38.bed
+
+open_chrom_list=($open_ESC $open_CNCC)
+
+for open in ${open_chrom_list[@]}
+do
+  echo $open
+  for file in `ls *CNCC*bed | grep -v NSC`
+  do
+    wc -l $file
+    intersectBed -a $file -b $open -wa  | sort | uniq | wc -l
+  done
+  echo "===="
+done
+
+cd 
+for open in ${open_chrom_list[@]}
+do
+  echo $open
+  for file in *bed
+  do
+    wc -l $file
+    intersectBed -a $file -b $open -wa  | sort | uniq | wc -l
+  done
+  echo "===="
+done
+
+```
+
+
+
+
+## additional annotation for stem cells - provided by Katies
+
+Various bed files have been copied at ESC_HiC_data_Schmitt_2016 and NPC_HiC_data_Schmitt_2016_hg19
+
+```{bash, eval = F}
+
+cd ~/reference_genomes/epigenetic_annotations_stem_cells/additional_annotations_various_stem_cells
+
+# for hiC data generate additional individual files for each of the A and B compartment
+awk '{print "chr"$1"\t"$2"\t"$3}' HiC_matrix_Compartments_coordinated.bed > HiC_matrix_Compartments_coordinated_chr.bed
+tail -n +2 Selected_cells_HiC_compartments_H1_NPC.txt | awk '{print "chr"$1"\t"$2"\t"$3"\t"$4}' > ESC_HiC_data_Schmitt_2016_hg19.bed
+tail -n +2 Selected_cells_HiC_compartments_H1_NPC.txt | awk '{print "chr"$1"\t"$2"\t"$3"\t"$5}' > NPC_HiC_data_Schmitt_2016_hg19.bed
+for file in *HiC_data_Schmitt_2016_hg19.bed
+do
+  echo  $file
+  awk '{print $1"\t"$2"\t"$3"\t"$4}' $file | grep -w "A" > ${file/2016_hg19.bed/Acomp_hg19.bed}
+  awk '{print $1"\t"$2"\t"$3"\t"$4}' $file | grep -w "B" > ${file/2016_hg19.bed/Bcomp_hg19.bed}
+
+done
+
+#for tad borders extract the single base that limit the tad itself
+for file in *TAD_Schmitt_2016_hg19.bed
+do
+awk '{print $1"\t"$2"\t"$2+1}' $file >  temp1.tad.bed
+awk '{print $1"\t"$3"\t"$3+1}' $file >  temp2.tad.bed
+
+sortBed -i $file | awk '{print $1"\t"$2"\t"$3"\tTAD"}' > ${file/TAD_Schmitt_2016_hg19.bed/TAD_Schmitt_2016_final_hg19.bed}
+
+cat temp1.tad.bed temp2.tad.bed | sortBed -i - | awk '{print $0"\tTADborder1bp"}'> ${file/TAD_Schmitt_2016_hg19.bed/TADborder_Schmitt_2016_hg19.bed}
+rm temp1.tad.bed temp2.tad.bed
+done
+
+#lifover chains
+chain_hg19_to_hg38=~/reference_genomes/liftover_chain/hg19ToHg38.over.chain.gz
+chain_hg18_to_hg38=~/reference_genomes/liftover_chain/hg18ToHg38.over.chain.gz
+
+# lifover from hg19 to hg38
+/Users/simeon01/applications/liftOver pnas.1613300114.sd02_hESC_eexported_rearranged.bed $chain_hg19_to_hg38 pnas.1613300114.sd02_hESC_eexported_rearranged.hg38.bed  pnas.1613300114.sd02_hESC_eexported_rearranged.unmapped
+
+for file in *hg19.bed
+do
+/Users/simeon01/applications/liftOver $file $chain_hg19_to_hg38 ${file/hg19.bed/hg19_lifted_hg38.hg38.bed} temp.unmapped
+done
+
+
+
+# liftover from hg18 to hg38
+for file in *hg18.sorted.bed
+do
+# slop them by few bases
+bedtools slop -i $file -g hg18.chrom.sizes -b 2 | sortBed -i - > ${file/hg18.sorted.bed/hg18.slop2bases.sorted.bed}
+/Users/simeon01/applications/liftOver ${file/hg18.sorted.bed/hg18.slop2bases.sorted.bed} $chain_hg18_to_hg38 ${file/hg18.sorted.bed/hg18_lifted_hg38.hg38.bed} temp.unmapped
+done
+
+
+final_dir=~/reference_genomes/epigenetic_annotations_stem_cells/additional_annotations_various_stem_cells/Annotations_for_GAT
+
+mkdir $final_dir
+
+# copy all files of interest to the destination folder
+#ESC_HiC_data_Schmitt_2016_hg19_lifted_hg38.hg38.bed
+#ESC_HiC_data_Schmitt_Acomp_hg19_lifted_hg38.hg38.bed
+#ESC_HiC_data_Schmitt_Bcomp_hg19_lifted_hg38.hg38.bed
+#ESC_HiC_data_TADborder_Schmitt_2016_hg19_lifted_hg38.hg38.bed
+#ESC_HiC_data_TAD_Schmitt_2016_hg19_lifted_hg38.hg38.bed
+#ESC_NPC.enhancerAtlas.hg19_lifted_hg38.hg38.bed
+#H1ESC_Xie_2013_all_ehancers_hg18_lifted_hg38.hg38.bed
+#H1ESC_Xie_2013_enriched_ehancers_hg18_lifted_hg38.hg38.bed
+#H1_Hniscz2013_superenhancers_hg19_lifted_hg38.hg38.bed
+#H1NPC_Xie_2013_all_ehancers_hg18_lifted_hg38.hg38.bed
+#H1NPC_Xie_2013_enriched_ehancers_hg18_lifted_hg38.hg38.bed
+#NPC_HiC_data_Schmitt_2016_hg19_lifted_hg38.hg38.bed
+#H9.enhancerAtlas.hg19_lifted_hg38.hg38.bed
+#hNCC.enhancerAtlas.hg19_lifted_hg38.hg38.bed
+#NPC_HiC_data_Schmitt_Acomp_hg19_lifted_hg38.hg38.bed
+#NPC_HiC_data_Schmitt_Bcomp_hg19_lifted_hg38.hg38.bed
+#NPC_HiC_data_TADborder_Schmitt_2016_hg19_lifted_hg38.hg38.bed
+#NPC_HiC_data_TAD_Schmitt_2016_hg19_lifted_hg38.hg38.bed
+#Prescott_enhancers_6000_CNCC_hg19_lifted_hg38.hg38.bed
+
+
+
+cp ESC_HiC_data_Schmitt_Acomp_hg19_lifted_hg38.hg38.bed $final_dir
+cp ESC_HiC_data_Schmitt_Bcomp_hg19_lifted_hg38.hg38.bed $final_dir
+cp ESC_HiC_data_TADborder_Schmitt_2016_hg19_lifted_hg38.hg38.bed $final_dir
+
+
+awk '{print $1"\t"$2"\t"$3"\tNPC.enhancerAtlas"}' ESC_NPC.enhancerAtlas.hg19_lifted_hg38.hg38.bed > $final_dir/ESC_NPC.enhancerAtlas.hg19_lifted_hg38.hg38.bed
+
+awk '{print $1"\t"$2"\t"$3"\tH1ESC_Xie_2013_all_ehancers"}' H1ESC_Xie_2013_all_ehancers_hg18_lifted_hg38.hg38.bed > $final_dir/H1ESC_Xie_2013_all_ehancers_hg18_lifted_hg38.hg38.bed
+
+awk '{print $1"\t"$2"\t"$3"\tH1ESC_Xie_2013_enriched_ehancer"}' H1ESC_Xie_2013_enriched_ehancers_hg18_lifted_hg38.hg38.bed > $final_dir/H1ESC_Xie_2013_enriched_ehancers_hg18_lifted_hg38.hg38.bed
+
+awk '{print $1"\t"$2"\t"$3"\tH1_Hniscz2013_superenhancers"}' H1_Hniscz2013_superenhancers_hg19_lifted_hg38.hg38.bed > $final_dir/H1_Hniscz2013_superenhancers_hg19_lifted_hg38.hg38.bed
+
+awk '{print $1"\t"$2"\t"$3"\tH1NPC_Xie_2013_all_ehancers"}' H1NPC_Xie_2013_all_ehancers_hg18_lifted_hg38.hg38.bed > $final_dir/H1NPC_Xie_2013_all_ehancers_hg18_lifted_hg38.hg38.bed
+
+awk '{print $1"\t"$2"\t"$3"\tH1NPC_Xie_2013_enriched_ehancers"}' H1NPC_Xie_2013_enriched_ehancers_hg18_lifted_hg38.hg38.bed > $final_dir/H1NPC_Xie_2013_enriched_ehancers_hg18_lifted_hg38.hg38.bed
+
+awk '{print $1"\t"$2"\t"$3"\tH9_ESC.enhancerAtlas"}' H9.enhancerAtlas.hg19_lifted_hg38.hg38.bed > $final_dir/H9.enhancerAtlas.hg19_lifted_hg38.hg38.bed
+
+awk '{print $1"\t"$2"\t"$3"\thNCC.enhancerAtlas"}' hNCC.enhancerAtlas.hg19_lifted_hg38.hg38.bed > $final_dir/hNCC.enhancerAtlas.hg19_lifted_hg38.hg38.bed
+
+
+cp NPC_HiC_data_Schmitt_Acomp_hg19_lifted_hg38.hg38.bed $final_dir/NPC_HiC_data_Schmitt_Acomp_hg19_lifted_hg38.hg38.bed
+
+cp NPC_HiC_data_Schmitt_Bcomp_hg19_lifted_hg38.hg38.bed $final_dir/NPC_HiC_data_Schmitt_Bcomp_hg19_lifted_hg38.hg38.bed
+
+cp NPC_HiC_data_TADborder_Schmitt_2016_hg19_lifted_hg38.hg38.bed  $final_dir/NPC_HiC_data_TADborder_Schmitt_2016_hg19_lifted_hg38.hg38.bed
+
+
+
+awk '{print $1"\t"$2"\t"$3"\tPrescott_enhancers_6000_CNCC"}' Prescott_enhancers_6000_CNCC_hg19_lifted_hg38.hg38.bed > $final_dir/Prescott_enhancers_6000_CNCC_hg19_lifted_hg38.hg38.bed
+
+# For each bed file (all, specific and intersection) run gat analysis over each of the annotations
+
+
+# perform fold enrichmeent analysis on any bed file in each subfolder
+cd ~/Data/Katie_high_level_analysis_Oct2019
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells/additional_annotations_various_stem_cells/Annotations_for_GAT'
+path_output='~/reference_genomes/epigenetic_annotations_stem_cells/additional_annotations_various_stem_cells/Annotations_for_GAT/output_enrichments_gat'
+mkdir $path_output
+scenario=(scenario1_multi2)
+#genomic_annotation=annotations_genomic_regions_gencode_v28.anno.bed
+annotation_list1=`ls $path_anno/*.hg38.bed`
+#scenario=(scenario3_multi2_extended_1kb)
+for case in ${scenario[@]}
+do
+  cd ./$case
+  # run gat analysis on full bed files 
+  for file in `ls *bed| grep -v shuffle`
+  do
+    echo "===>> " $file "<<==="
+    for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      echo "===="
+      base_annotation=`basename $anno`
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=${anno} --segments=${file} -S $path_output/${file%%.bed}_intervals_${base_annotation%%.bed}.dat -t 4"
+      echo ${file%%.bed}_intervals_${base_annotation%%.bed}.dat
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+    done
+  done
+
+  #run the enrichment for subsets (common and specific ones)
+  cd ./bed_intersections_common
+  pwd
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_list1[@]}
+    do
+      base_annotation=`basename $anno`
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=${anno} --segments=${file} -S $path_output/${file%%.bed}_intervals_${base_annotation%%.bed}.dat -t 4"
+      echo ${file%%.bed}_intervals_${base_annotation%%.bed}.dat
+      pwd
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+      
+    done
+  done
+  echo " ** == ** =="
+  echo " ++++++++++ END BLOCK +++++++++++++++++"
+  cd ../..
+done
+
+
+
+
+
+
+annotation_list1=~/reference_genomes/hg38/annotations_genomic_regions_gencode_v28.anno2.bed
+cd ~/Data/Katie_high_level_analysis_Oct2019
+for case in ${scenario[@]}
+do
+  cd ./$case
+  # run gat analysis on full bed files 
+  for file in `ls *bed| grep -v shuffle`
+  do
+    echo "===>> " $file "<<==="
+    for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      echo "===="
+      base_annotation=`basename $anno`
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=${anno} --segments=${file} -S $path_output/${file%%.bed}_intervals_${base_annotation%%.bed}.dat -t 4"
+      echo ${file%%.bed}_intervals_${base_annotation%%.bed}.dat
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+    done
+  done
+
+  #run the enrichment for subsets (common and specific ones)
+  cd ./bed_intersections_common
+  pwd
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_list1[@]}
+    do
+      base_annotation=`basename $anno`
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=${anno} --segments=${file} -S $path_output/${file%%.bed}_intervals_${base_annotation%%.bed}.dat -t 4"
+      echo ${file%%.bed}_intervals_${base_annotation%%.bed}.dat
+      pwd
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+      
+    done
+  done
+  echo " ** == ** =="
+  echo " ++++++++++ END BLOCK +++++++++++++++++"
+  cd ../..
+done
+
+```
+
+### comparison BG4 peaks and ATAC peaks
+```{bash, eval = F}
+
+# consensus BG4 regions
+/stem_cells//broad/scenario1_multi2/*bed
+
+# consensus ATAC regions
+path_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output
+mkdir $path_atac/intervene_atac_only
+cd $path_atac
+cmd_intervene="intervene venn -i *.multi2.bed -o $path_atac/intervene_atac_only"
+sbatch --mem 2G --wrap "$cmd_intervene"
+
+mkdir $path_atac/intervene_atac_only_pariwise
+cmd_intervene2="intervene pairwise -i *.multi2.bed --compute frac --htype pie -o $path_atac/intervene_atac_only_pariwise"
+sbatch --mem 2G --wrap "$cmd_intervene2"
+
+mkdir $path_atac/intervene_pariwise_atac_bg4
+cmd_intervene2="intervene pairwise -i *.multi2.bed ./BG4_peaks/*bed --compute frac --htype pie -o $path_atac/intervene_atac_only_pariwise_atac_bg4"
+sbatch --mem 2G --wrap "$cmd_intervene2"
+
+path_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output
+cd $path_atac
+mkdir comparison_atac_bg4
+cells=(ESC NSC CNCC)
+for cell in ${cells[@]}
+do
+  atac_cell=`ls ${cell}_ATAC.multi2.sorted.bed`
+  bg4_cell=`ls BG4_peaks/${cell}.bg4.bio2out3.sorted.bed`
+  
+  # for each cell compute intersection and differeence set
+  intersectBed -a $atac_cell -b $bg4_cell -wa -v | sortBed -i - > ./comparison_atac_bg4/$cell.atac.specific.bed
+  intersectBed -b $atac_cell -a $bg4_cell -wa -v | sortBed -i -> ./comparison_atac_bg4/$cell.bg4.specific.bed
+  intersectBed -b $atac_cell -a $bg4_cell -wa | sortBed -i -> ./comparison_atac_bg4/temp1
+  intersectBed -a $atac_cell -b $bg4_cell -wa | sortBed -i -> ./comparison_atac_bg4/temp2
+  cat ./comparison_atac_bg4/temp1 ./comparison_atac_bg4/temp2 | mergeBed -i - > ./comparison_atac_bg4/$cell.atac.bg4.common.bed
+  rm ./comparison_atac_bg4/temp1 ./comparison_atac_bg4/temp2
+  
+  # save to bed the coordinates of the intersections
+  
+done
+cells=(ESC NSC CNCC)
+for cell in ${cells[@]}
+do
+  common_intervals=`ls comparison_atac_bg4/${cell}.atac.bg4.common.bed`
+  intersectBed -a ${cell}_ATAC.multi2.sorted.bed -b BG4_peaks/${cell}.bg4.bio2out3.sorted.bed -wa -wb > comparison_atac_bg4/${cell}.atac.bg4.common.peaks_intervals.bed
+done
+
+
+# compute coverages across common intervals in both bg4 and atac
+atac_bam=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352 #merged.sorted.bam
+bg4_bam=~/Data/20190917_all_katie_bams_stem_cells
+out_dir=~/Data/20190917_all_katie_bams_stem_cells/coverages_atac_bg4
+mkdir $out_dir
+
+#cells=(ESC NSC CNCC)
+cells=(CNCC)
+path_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output
+cd $path_atac
+for cell in ${cells[@]}
+do
+  common_regions=comparison_atac_bg4/$cell.atac.bg4.common.bed
+  for bam in `ls $atac_bam/${cell}*.merged.sorted.bam`
+  do
+    bam_file=`basename $bam`
+    sbatch --mem 8G --wrap "bedtools coverage -a $path_atac/$common_regions -b $bam  -counts > $out_dir/${bam_file%%.bam}.atac.coverages.txt"
+    echo " "
+  done
+  echo "++++++"
+  
+  for bam in `ls $bg4_bam/${cell}*.markduplicates.bam`
+  do
+    bam_file=`basename $bam`
+    #sbatch --mem 8G --wrap "bedtools coverage -a $common_regions -b $bam  -counts > $out_dir/${bam_file%%.bam}.bg4.coverages.txt"
+    echo " "
+  done
+  echo "======"
+done
+
+# for atac_seq and BG4-chipseq find regions that are common across all cells
+
+multiIntersectBed -i *_ATAC.multi2.sorted.bed | awk '{ if ($4>=3) print $0}'| sortBed -i - | mergeBed -i - > ATAC_ESC_CNCC_NSC.common.bed
+path_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output
+cd $path_atac
+atac_bam=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352 #merged.sorted.bam
+bg4_bam=~/Data/20190917_all_katie_bams_stem_cells
+out_dir=~/Data/20190917_all_katie_bams_stem_cells/coverages_atac_bg4_conservedATAC
+mkdir $out_dir
+cells=(ESC NSC CNCC)
+for cell in ${cells[@]}
+do
+  common_regions=comparison_atac_bg4/$cell.atac.bg4.common.bed
+  for bam in `ls $atac_bam/${cell}*.merged.sorted.bam`
+  do
+    bam_file=`basename $bam`
+    sbatch --mem 8G --wrap "bedtools coverage -a ATAC_ESC_CNCC_NSC.common.bed -b $bam  -counts > $out_dir/${bam_file%%.bam}.atac.coverages.txt"
+    echo " "
+  done
+  echo "++++++"
+  
+  for bam in `ls $bg4_bam/${cell}*.markduplicates.bam`
+  do
+    bam_file=`basename $bam`
+    #sbatch --mem 8G --wrap "bedtools coverage -a ATAC_ESC_CNCC_NSC.common.bed -b $bam  -counts > $out_dir/${bam_file%%.bam}.bg4.coverages.txt"
+    echo " "
+  done
+  echo "======"
+done
+
+# do the same with only open chromatine sites that are mantained across all and 
+path_atac=~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output
+cd $path_atac
+intersectBed -a ATAC_ESC_CNCC_NSC.common.bed -b ~/reference_genomes/hg38/gencode.v28.TSS.bed -wa > ATAC_ESC_CNCC_NSC.common.gencode.v28.TSS.bed
+out_dir=~/Data/20190917_all_katie_bams_stem_cells/coverages_atac_bg4_conservedATAC_TSSpositive
+mkdir $out_dir
+cells=(ESC NSC CNCC)
+for cell in ${cells[@]}
+do
+  common_regions=comparison_atac_bg4/$cell.atac.bg4.common.bed
+  for bam in `ls $atac_bam/${cell}*.merged.sorted.bam`
+  do
+    bam_file=`basename $bam`
+    sbatch --mem 8G --wrap "bedtools coverage -a ATAC_ESC_CNCC_NSC.common.bed -b $bam  -counts > $out_dir/${bam_file%%.bam}.atac.coverages.txt"
+    echo " "
+  done
+  echo "++++++"
+  
+  for bam in `ls $bg4_bam/${cell}*.markduplicates.bam`
+  do
+    bam_file=`basename $bam`
+    sbatch --mem 8G --wrap "bedtools coverage -a ATAC_ESC_CNCC_NSC.common.bed -b $bam  -counts > $out_dir/${bam_file%%.bam}.bg4.coverages.txt"
+    echo " "
+  done
+  echo "======"
+done
+
+
+```
+
+
+## Fold enrichments of G4 peaks at different promoters as annotated in All_anno.RData
+
+```{bash, eval= F}
+library(tidyverse)
+setwd('/stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4')
+load("All_anno.RData")
+
+All_anno_prom_sel <- All_anno %>% select(ens_id,ESC_status,CNCC_status,NSC_status)
+
+
+promoters_annotations <- read.delim('/Users/simeon01/Documents/genomes/hg38/gencode.v28.TSS.slop1000.bed',sep ="\t",stringsAsFactors = F, header = F)
+
+colnames(promoters_annotations) <- c("chr","start","end","ens_id","feat","strand")
+
+All_anno_prom_sel_prom_coord <- dplyr::left_join(All_anno_prom_sel,promoters_annotations,by="ens_id")
+
+
+
+
+## steps: select only promoters with 1 in each case (ESC, NSC and CNCC)
+
+ESC_anno_promoters <- All_anno_prom_sel_prom_coord %>% select(chr,start,end,ens_id,feat,strand,ESC_status)
+
+CNCC_anno_promoters <- All_anno_prom_sel_prom_coord %>% select(chr,start,end,ens_id,feat,strand,CNCC_status)
+
+NSC_anno_promoters <- All_anno_prom_sel_prom_coord %>% select(chr,start,end,ens_id,feat,strand,NSC_status)
+
+write.table(ESC_anno_promoters,file ='ESC_anno_promoters_for_foldEnrichments.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+
+write.table(NSC_anno_promoters,file ='NSC_anno_promoters_for_foldEnrichments.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+
+write.table(CNCC_anno_promoters,file ='CNCC_anno_promoters_for_foldEnrichments.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+
+```
+
+Go to the folder with those annotations and sort the bed files
+
+```{bash, eval = F}
+cd /stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4
+for file in *for_foldEnrichments.bed
+do
+  bedtools sort -i $file | cut -f 1,2,3,7 > ${file%%.bed}.sorted.bed
+done
+
+scp *_foldEnrichments.sorted.bed clust1:~/reference_genomes/epigenetic_annotations_stem_cells
+```
+
+Move annotation files to cluster and run enrichment analysis
+
+```{bash, eval = F}
+
+
+
+# perform fold enrichmeent analysis on any bed file in each subfolder
+cd ~/Data/Katie_high_level_analysis_Oct2019
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+scenario=(scenario1_multi2 scenario2_5out9 scenario3_multi2_extended_1kb)
+#genomic_annotation=annotations_genomic_regions_gencode_v28.anno.bed
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+
+ESC_prom=ESC_anno_promoters_for_foldEnrichments.sorted.bed
+CNCC_prom=CNCC_anno_promoters_for_foldEnrichments.sorted.bed
+NSC_prom=NSC_anno_promoters_for_foldEnrichments.sorted.bed
+annotation_list1=($ESC_prom $CNCC_prom $NSC_prom)
+scenario=(scenario1_multi2)
+
+for case in ${scenario[@]}
+do
+  cd ./$case
+  # run gat analysis on full bed files 
+  for file in `ls *bed | grep -v "shuffle"`
+  do
+    echo $file
+    for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      pwd
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ${file%%.bed}_${anno%%.bed}.dat -t 4"
+      echo ${file%%.bed}_${anno%%.bed}.dat
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+    done
+  done
+
+  #run the enrichment for subsets (common and specific ones)
+  cd ./bed_intersections_common
+  pwd
+  for file in *bed
+  do
+    echo $file
+    for anno in ${annotation_list1[@]}
+    do
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ${file%%.bed}_${anno%%.bed}.dat -t 4"
+      echo ${file%%.bed}.${anno%%.bed}.dat
+      pwd
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+    done
+  done
+  echo " ** == ** =="
+  cd ../..
+done
+
+
+
+for case in ${scenario[@]}
+do
+  cd ./$case
+  # run gat analysis on full bed files 
+  for file in `ls CNCC_specific.20200421.bed`
+  do
+    echo $file
+    for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      pwd
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ${file%%.bed}_${anno%%.bed}.dat -t 4"
+      echo ${file%%.bed}_${anno%%.bed}.dat
+      echo $cmd_gat
+      sbatch --mem 6G --wrap "$cmd_gat"
+      echo " "
+    done
+  done
+done
+
+```
+
+
+## annotate BG4 regions based on OQs info
+
+```{bash, eval =F}
+
+# for all G4 regions (BG4 peaks by cell type) extract bed files with center and imputed strand (based on OQs)
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2
+path_oqs=~/reference_genomes/OQs
+for file in **bio2out3.bed  
+do
+  sbatch --mem 2G --wrap "annotateBed -i $file -files $path_oqs/OQ_plus_hits.lifted_hg19_to_hg38.Minus_Strand_bed6.bed $path_oqs/OQ_minus_hits.lifted_hg19_to_hg38.Plus_Strand_bed6.bed -names Minus_Strand_bed6 Plus_Strand_bed6  -counts > ${file%%.bed}.G4_peaks_anotated_by_OQsStrand.bed"
+done
+
+
+for file in *.G4_peaks_anotated_by_OQsStrand.bed
+do
+  awk '{if ($4>=0 && $5==0) {print $1"\t"$2+int(($3-$2)/2+0.49)-1 "\t" $2+int(($3-$2)/2+0.49)"\t.\t.\t-"} else if ($4==0 && $5>=0) {print $1"\t"$2+int(($3-$2)/2+0.49)"\t"$2 +int(($3-$2)/2+0.49)+1 "\t.\t.\t+"}}' $file > ${file%%.G4_peaks_anotated_by_OQsStrand.bed}.center.OQsStrand.bed
+done
+
+
+# for regions that are common and specific, assign a sign (based on OQs) and use the coordinates of the center
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common
+path_oqs=~/reference_genomes/OQs
+for file in *C.bed
+do
+  sbatch --mem 2G --wrap "annotateBed -i $file -files $path_oqs/OQ_plus_hits.lifted_hg19_to_hg38.Minus_Strand_bed6.bed $path_oqs/OQ_minus_hits.lifted_hg19_to_hg38.Plus_Strand_bed6.bed -names Minus_Strand_bed6 Plus_Strand_bed6  -counts > ${file%%.bed}.G4_peaks_anotated_by_OQsStrand.bed"
+done
+
+
+for file in *.G4_peaks_anotated_by_OQsStrand.bed
+do
+  awk '{if ($4>=0 && $5==0) {print $1"\t"$2+int(($3-$2)/2+0.49)-1 "\t" $2+int(($3-$2)/2+0.49)"\t.\t.\t-"} else if ($4==0 && $5>=0) {print $1"\t"$2+int(($3-$2)/2+0.49)"\t"$2 +int(($3-$2)/2+0.49)+1 "\t.\t.\t+"}}' $file > ${file%%.G4_peaks_anotated_by_OQsStrand.bed}.center.OQsStrand.bed
+done
+
+#
+
+```
+
+
+Additional venn diagram
+```{bash, eval = F}
+
+intervene pairwise -i ESC_specific.20200421.bed CNCC_specific.20200421.bed NSC_specific.20200421.bed ESC_CNCC_NSC.multi3_common.bed ~/Data/20200128_Katie_Atac_seq/merged_SLX-18379_SLX-18352/macs2_output/*multi2.bed  --type genomic  --compute frac --htype pie --filenames --output ./intervene_bg4_atac
+```
+
+
+## density plots of BG4 chip-seq
+
+```{bash, eval = F}
+
+cells=(CNCC NSC)
+folder_out_result=~/Data/20200512_KatieStemCells_BW/density_plots_second_BG4_seq_at_G4_ppromoters
+mkdir $folder_out_result
+
+for cell in ${cells[@]}
+do
+cd ~/Data/20200512_KatieStemCells_BW
+  for bwfile in ${cell}*bw
+  do
+    # DAUTHER CELL 1
+    sbatch --mem 6G --wrap="computeMatrix reference-point -S ${bwfile} -R ${cell}_bed_lists/*bed  -a 1000 -b 1000 --outFileName $folder_out_result/${bwfile}_${cell}.matrix.gz --missingDataAsZero && 
+    plotProfile --matrixFile $folder_out_result/${bwfile}_${cell}.matrix.gz -o $folder_out_result/${bwfile}_${cell}.matrix.pdf --averageType median --plotWidth 18 --plotHeight 10 &&
+    plotHeatmap --matrixFile $folder_out_result/${bwfile}_${cell}.matrix.gz -o $folder_out_result/${bwfile}_${cell}.matrix_heatmap.pdf"
+    echo "========================"
+  done
+  for bwfile in ESC*bw
+  do
+    # ESC
+    sbatch --mem 6G --wrap="computeMatrix reference-point -S ${bwfile} -R ${cell}_bed_lists/*bed  -a 1000 -b 1000 --outFileName $folder_out_result/${bwfile}_${cell}.matrix.gz --missingDataAsZero && 
+    plotProfile --matrixFile $folder_out_result/${bwfile}_${cell}.matrix.gz -o $folder_out_result/${bwfile}_${cell}.matrix.pdf --averageType median --plotWidth 18 --plotHeight 10 &&
+    plotHeatmap --matrixFile $folder_out_result/${bwfile}_${cell}.matrix.gz -o $folder_out_result/${bwfile}_${cell}.matrix_heatmap.pdf"
+    echo "========================"
+  done
+  echo "**********"
+done
+
+
+#local machine
+cd /stem_cells//broad/scenario1_multi2
+
+scp clust1:~/Data/20200512_KatieStemCells_BW/density_plots_second_BG4_seq_at_G4_ppromoters 
+
+```
+
+
+```{R, eval = F}
+
+setwd('/stem_cells//broad/scenario1_multi2/density_plots_second_BG4_seq_at_G4_ppromoters')
+#NSC_ATAC*matrix*gz
+#ESC_ATAC*matrix*gz
+#CNCC_ATAC*matrix*gz
+
+ending_label_CNCC="_CNCC.matrix.gz"
+ending_label_NSC="_NSC.matrix.gz"
+ending_label_ESC="_ESC.matrix.gz"
+
+case_label_ESC='ESC_'
+
+case_label_CNCC='CNCC_'
+
+case_label_NSC='NSC_'
+
+
+average_densities <- function(case_label,ending_label){
+  matrix_files <- list.files(".",paste0(case_label,".*",ending_label,"$"))
+  matrix_files
+  # extract params for initialize matrix
+  header_temp <- readLines(gzfile(matrix_files[1]),n=1)
+  
+  A <- unlist(strsplit(header_temp, split=',\"'))
+  A <- gsub('\"','',A)
+  A <- gsub('[','',A, fixed = T)
+  A <- gsub(']','',A, fixed = T)
+  N_rows <- as.numeric(tail(unlist(strsplit(grep('group_boundaries',A, value =T),',|:')),1))
+  groups_ind <- as.numeric(tail(unlist(strsplit(grep('group_boundaries',A, value =T),',|:')),-2)) # to exclude first 2
+  N_col <- as.numeric(tail(unlist(strsplit(grep('sample_boundaries',A, value =T),',|:')),1))
+
+  temp1_sum <- matrix(0,ncol=N_col,nrow=N_rows)
+  for (i in 1:length(matrix_files)){
+    header <- readLines(gzfile(matrix_files[i]),n=1)
+    temp1 <- read.table(gzfile(matrix_files[i]),skip = 1, stringsAsFactors = F) 
+    temp1_sum <- temp1_sum +  temp1[,7:dim(temp1)[2]]
+    print(i)
+  }
+  temp1_avg <- temp1_sum/length(matrix_files)
+  temp1_avg_complete <- cbind(temp1[,1:6],temp1_avg)
+  file_name <- paste0(case_label,ending_label,'_average.matrix')
+  fileConn<-file(file_name)
+  writeLines(header,fileConn)
+  write.table(temp1_avg_complete, file = file_name, append = T,sep = "\t",quote = F, col.names = F, row.names = F)
+  flag='done'
+  close(fileConn)
+  list_sizes <- list("N_rows"=N_rows,"groups_ind"=groups_ind,"N_col"=N_col)
+  return(list_sizes)
+}  
+
+
+#average_densities(case_label_ESC,ending_label_ESC)
+average_densities(case_label_ESC,ending_label_CNCC)
+average_densities(case_label_ESC,ending_label_NSC)
+
+
+average_densities(case_label_CNCC,ending_label_CNCC)
+average_densities(case_label_NSC,ending_label_NSC) 
+
+# cd /stem_cells//broad/scenario1_multi2/density_plots_second_atac_seq_at_bivalent_promoters
+
+scp *average.matrix.gz clust1:~/Data/20200512_KatieStemCells_BW/density_plots_second_BG4_seq_at_G4_ppromoters
+```
+
+generate Heatmap and plot with deeptools
+
+```{bash, eval = F}
+for file in *average*.matrix.gz
+do
+  sbatch --mem 2G --wrap="plotHeatmap --matrixFile $file  --averageTypeSummaryPlot median -o ${file%%.matrix.gz}.matrix_heatmap.pdf --yMax 1 --zMax 1"
+  echo "========================"
+done
+
+
+# locally 
+cd /stem_cells//broad/scenario1_multi2/density_plots_second_BG4_seq_at_G4_ppromoters
+scp clust1:~/Data/20200512_KatieStemCells_BW/density_plots_second_BG4_seq_at_G4_ppromoters/*average.matrix_heatmap.pdf . 
+```
+
+ 
+
+
+## create Bed reference sets for density plots
+
+Here i generated the bed intervals of TSSs stratyfing by promoter types where types are defined based on histone modification status
+
+```{bash, eval= F}
+library(tidyverse)
+setwd('/stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4')
+load("All_anno.RData")
+
+All_anno <- All_anno %>% mutate(ESC_G4_status=case_when(ESC_G4 == 0 ~ "G4-",ESC_G4> 0 ~ "G4+")) %>% mutate(NSC_G4_status=case_when(NSC_G4 == 0 ~ "G4-",NSC_G4> 0 ~ "G4+")) %>% mutate(CNCC_G4_status=case_when(CNCC_G4 == 0 ~ "G4-",CNCC_G4> 0 ~ "G4+"))
+
+
+All_anno_prom_sel <- All_anno %>% select(ens_id,ESC_status,CNCC_status,NSC_status,ESC_G4_status,NSC_G4_status,CNCC_G4_status)
+
+TSS_1base <- read.delim('/Users/simeon01/Documents/genomes/hg38/gencode.v28.TSS.minus1base.bed',stringsAsFactors = F,header = F)
+colnames(TSS_1base) <- c('TSS_chr','TSS_start','TSS_end','ens_id','feature','TSS_strand')
+
+
+
+All_anno_prom_sel_prom_coord_1base <- dplyr::left_join(All_anno_prom_sel,TSS_1base,by="ens_id")
+
+
+## steps: select promoter type and generate a new field that contains G4 and promoter type by cell type then print it to bed file
+
+
+ESC_anno_promoters_G4plus <- All_anno_prom_sel_prom_coord_1base %>% filter(ESC_G4_status == "G4+") %>% select(TSS_chr,TSS_start,TSS_end,ens_id,feature,TSS_strand,ESC_status,ESC_G4_status)
+ESC_anno_promoters_G4minus <- All_anno_prom_sel_prom_coord_1base %>% filter(ESC_G4_status == "G4-") %>% select(TSS_chr,TSS_start,TSS_end,ens_id,feature,TSS_strand,ESC_status,ESC_G4_status)
+
+
+CNCC_anno_promoters_G4plus <- All_anno_prom_sel_prom_coord_1base %>% filter(CNCC_G4_status == "G4+") %>% select(TSS_chr,TSS_start,TSS_end,ens_id,feature,TSS_strand,ESC_status,ESC_G4_status)
+CNCC_anno_promoters_G4minus <- All_anno_prom_sel_prom_coord_1base %>% filter(CNCC_G4_status == "G4-") %>% select(TSS_chr,TSS_start,TSS_end,ens_id,feature,TSS_strand,ESC_status,ESC_G4_status)
+
+
+NSC_anno_promoters_G4plus <- All_anno_prom_sel_prom_coord_1base %>% filter(NSC_G4_status == "G4+") %>% select(TSS_chr,TSS_start,TSS_end,ens_id,feature,TSS_strand,ESC_status,ESC_G4_status)
+NSC_anno_promoters_G4minus <- All_anno_prom_sel_prom_coord_1base %>% filter(NSC_G4_status == "G4-") %>% select(TSS_chr,TSS_start,TSS_end,ens_id,feature,TSS_strand,ESC_status,ESC_G4_status)
+
+
+write.table(ESC_anno_promoters_G4plus,file ='ESC_anno_promoters_G4plus.prom_coord.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+write.table(ESC_anno_promoters_G4minus,file ='ESC_anno_promoters_G4minus.prom_coord.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+
+write.table(NSC_anno_promoters_G4plus,file ='NSC_anno_promoters_G4plus.prom_coord.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+write.table(NSC_anno_promoters_G4minus,file ='NSC_anno_promoters_G4minus.prom_coord.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+
+write.table(CNCC_anno_promoters_G4plus,file ='CNCC_anno_promoters_G4plus.prom_coord.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+write.table(CNCC_anno_promoters_G4minus,file ='CNCC_anno_promoters_G4minus.prom_coord.bed',sep = "\t",quote = F,col.names = F,row.names = F )
+
+```
+
+Copy files to folder on cluster
+ 
+```{bash, eval = F}
+ 
+ scp *anno_promoters_G4*.prom_coord.bed clust1:~/reference_genomes/epigenetic_annotations_stem_cells
+```
+
+density plots
+```{bash, eval = F}
+## density plots of BG4 chip-seq
+
+```{bash, eval = F}
+cd ~/reference_genomes/epigenetic_annotations_stem_cells
+mkdir promoter_annotated_by_histones
+cp **_anno_promoters_G4*.prom_coord.bed  ./promoter_annotated_by_histones
+# for each annotation file generate and saved as
+# split annotations in independent subfile
+##
+for file in *_anno_promoters_G4*.prom_coord.bed 
+do
+	 sbatch --mem 1G --wrap "awk '{print >> \$7FILENAME; close(\$7)}' $file"
+done
+rm ESC*bed
+rm NSC*bed
+rm CNCC*bed
+
+
+cells=(ESC CNCC NSC)
+folder_out_result=~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones
+path_reference_bed=~/reference_genomes/epigenetic_annotations_stem_cells/promoter_annotated_by_histones
+mkdir $folder_out_result
+
+for cell in ${cells[@]}
+do
+cd ~/Data/20200512_KatieStemCells_BW
+  for bwfile in ${cell}*bw
+  do
+    sbatch --mem 6G --wrap="computeMatrix reference-point -S ${bwfile} -R $path_reference_bed/*${cell}_anno_promoters_G4*plus.prom_coord.bed   -a 1000 -b 1000 --outFileName $folder_out_result/${bwfile}_${cell}_G4plus.matrix.gz --missingDataAsZero && 
+    plotProfile --matrixFile $folder_out_result/${bwfile}_${cell}_G4plus.matrix.gz -o $folder_out_result/${bwfile}_${cell}_G4plus.matrix.pdf --averageType median --plotWidth 18 --plotHeight 10 &&
+    plotHeatmap --matrixFile $folder_out_result/${bwfile}_${cell}_G4plus.matrix.gz -o $folder_out_result/${bwfile}_${cell}_G4plus.matrix_heatmap.pdf"
+    echo "========================"
+    
+    sbatch --mem 6G --wrap="computeMatrix reference-point -S ${bwfile} -R $path_reference_bed/*${cell}_anno_promoters_G4*minus.prom_coord.bed   -a 1000 -b 1000 --outFileName $folder_out_result/${bwfile}_${cell}_G4minus.matrix.gz --missingDataAsZero && 
+    plotProfile --matrixFile $folder_out_result/${bwfile}_${cell}_G4minus.matrix.gz -o $folder_out_result/${bwfile}_${cell}_G4minus.matrix.pdf --averageType median --plotWidth 18 --plotHeight 10 &&
+    plotHeatmap --matrixFile $folder_out_result/${bwfile}_${cell}_G4minus.matrix.gz -o $folder_out_result/${bwfile}_${cell}_G4minus.matrix_heatmap.pdf"
+    echo "========================"
+  done
+done  
+```
+
+```{bash, eval = F}
+
+#copy locally the outcome 
+cd /stem_cells//broad/scenario1_multi2
+scp -r  clust1:~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones .
+```
+
+Average profiles with R script/function locally
+
+```{R, eval =F}
+setwd('/stem_cells//broad/scenario1_multi2/density_plots_BG4_seq_at_promoter_stratified_by_histones')
+#NSC_ATAC*matrix*gz
+#ESC_ATAC*matrix*gz
+#CNCC_ATAC*matrix*gz
+
+ending_label_ESCminus="_ESC_G4minus.matrix.gz"
+ending_label_ESCplus="_ESC_G4plus.matrix.gz"
+
+ending_label_CNCCminus="_CNCC_G4minus.matrix.gz"
+ending_label_CNCCplus="_CNCC_G4plus.matrix.gz"
+
+ending_label_NSCminus="_NSC_G4minus.matrix.gz"
+ending_label_NSCplus="_NSC_G4plus.matrix.gz"
+
+case_label_ESC='ESC_'
+
+case_label_CNCC='CNCC_'
+
+case_label_NSC='NSC_'
+
+
+average_densities <- function(case_label,ending_label){
+  matrix_files <- list.files(".",paste0(case_label,".*",ending_label,"$"))
+  matrix_files
+  # extract params for initialize matrix
+  header_temp <- readLines(gzfile(matrix_files[1]),n=1)
+  
+  A <- unlist(strsplit(header_temp, split=',\"'))
+  A <- gsub('\"','',A)
+  A <- gsub('[','',A, fixed = T)
+  A <- gsub(']','',A, fixed = T)
+  N_rows <- as.numeric(tail(unlist(strsplit(grep('group_boundaries',A, value =T),',|:')),1))
+  groups_ind <- as.numeric(tail(unlist(strsplit(grep('group_boundaries',A, value =T),',|:')),-2)) # to exclude first 2
+  N_col <- as.numeric(tail(unlist(strsplit(grep('sample_boundaries',A, value =T),',|:')),1))
+
+  temp1_sum <- matrix(0,ncol=N_col,nrow=N_rows)
+  for (i in 1:length(matrix_files)){
+    header <- readLines(gzfile(matrix_files[i]),n=1)
+    temp1 <- read.table(gzfile(matrix_files[i]),skip = 1, stringsAsFactors = F) 
+    temp1_sum <- temp1_sum +  temp1[,7:dim(temp1)[2]]
+    print(i)
+  }
+  temp1_avg <- temp1_sum/length(matrix_files)
+  temp1_avg_complete <- cbind(temp1[,1:6],temp1_avg)
+  file_name <- paste0(case_label,ending_label,'_average.matrix')
+  fileConn<-file(file_name)
+  writeLines(header,fileConn)
+  write.table(temp1_avg_complete, file = file_name, append = T,sep = "\t",quote = F, col.names = F, row.names = F)
+  flag='done'
+  close(fileConn)
+  list_sizes <- list("N_rows"=N_rows,"groups_ind"=groups_ind,"N_col"=N_col)
+  return(list_sizes)
+}  
+
+
+average_densities(case_label_ESC,ending_label_ESCminus)
+average_densities(case_label_ESC,ending_label_ESCplus)
+
+average_densities(case_label_CNCC,ending_label_CNCCminus)
+average_densities(case_label_CNCC,ending_label_CNCCplus)
+
+average_densities(case_label_NSC,ending_label_NSCminus)
+average_densities(case_label_NSC,ending_label_NSCplus)
+```
+
+copy back to cluster and run deeptools heatmap
+
+```{bash, eval = F}
+
+cd /stem_cells//broad/scenario1_multi2/density_plots_BG4_seq_at_promoter_stratified_by_histones
+gzip *average.matrix
+scp *_average.matrix.gz clust1:~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones
+```
+
+generate Heatmap and plot with deeptools
+
+```{bash, eval = F}
+#on cluster
+cd ~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones
+for file in *average*.matrix.gz
+do
+  sbatch --mem 2G --wrap="plotHeatmap --matrixFile $file  --averageTypeSummaryPlot median -o ${file%%.matrix.gz}.matrix_heatmap.pdf --yMax 0.2"
+  echo "========================"
+done
+
+
+# locally 
+cd /stem_cells//broad/scenario1_multi2/density_plots_BG4_seq_at_promoter_stratified_by_histones
+
+scp clust1:~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones/*average.matrix_heatmap.pdf . 
+```
+
+heatmap by promoter histone type
+
+```{bash, eval =F}
+
+prom_type=(bival H3K27me3_only H3K4me3_only relax_bival)
+cells=(ESC CNCC NSC)
+folder_out_result=~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones2
+path_reference_bed=~/reference_genomes/epigenetic_annotations_stem_cells/promoter_annotated_by_histones
+mkdir $folder_out_result
+
+for prom in ${prom_type[@]}
+  do
+  
+  for cell in ${cells[@]}
+  do
+  cd ~/Data/20200512_KatieStemCells_BW
+    for bwfile in ${cell}*bw
+    do
+      sbatch --mem 6G --wrap="computeMatrix reference-point -S ${bwfile} -R $path_reference_bed/${prom}*${cell}_anno_promoters_G4*.prom_coord.bed   -a 1000 -b 1000 --outFileName $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.gz --missingDataAsZero && 
+      plotProfile --matrixFile $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.gz -o $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.pdf --averageType median --plotWidth 18 --plotHeight 10 &&
+      plotHeatmap --matrixFile $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.gz -o $folder_out_result/${bwfile}_${cell}_G4plus.matrix_heatmap.pdf"
+      echo "========================"
+      
+    done
+  done  
+done
+```
+
+copy locally
+```{bash, eval = F}
+#copy  the outcome  locally
+cd /stem_cells//broad/scenario1_multi2
+scp -r  clust1:~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones2 .
+
+```
+
+
+```{R, eval =F}
+setwd('/stem_cells//broad/scenario1_multi2/density_plots_BG4_seq_at_promoter_stratified_by_histones2')
+#NSC_ATAC*matrix*gz
+#ESC_ATAC*matrix*gz
+#CNCC_ATAC*matrix*gz
+
+
+
+ending_label_ESC_K27<-"_H3K27me3_only_ESC_G4.matrix.gz"
+ending_label_ESC_K4<-"_H3K4me3_only_ESC_G4.matrix.gz"
+ending_label_ESC_bival<-"w_bival_ESC_G4.matrix.gz"
+ending_label_ESC_relax_bival<-"w_relax_bival_ESC_G4.matrix.gz"
+
+ending_label_CNCC_K27<-"_H3K27me3_only_CNCC_G4.matrix.gz"
+ending_label_CNCC_K4<-"_H3K4me3_only_CNCC_G4.matrix.gz"
+ending_label_CNCC_bival<-"w_bival_CNCC_G4.matrix.gz"
+ending_label_CNCC_relax_bival<-"_relax_bival_CNCC_G4.matrix.gz"
+
+ending_label_NSC_K27<-"_H3K27me3_only_NSC_G4.matrix.gz"
+ending_label_NSC_K4<-"_H3K4me3_only_NSC_G4.matrix.gz"
+ending_label_NSC_bival<-"w_bival_NSC_G4.matrix.gz"
+ending_label_NSC_relax_bival<-"w_relax_bival_NSC_G4.matrix.gz"
+
+
+case_label_ESC='ESC_'
+
+case_label_CNCC='CNCC_'
+
+case_label_NSC='NSC_'
+
+source('/stem_cells//broad/scenario1_multi2/average_deeptools_densities.R')
+
+
+average_densities(case_label_ESC,ending_label_ESC_K27)
+average_densities(case_label_ESC,ending_label_ESC_K4)
+average_densities(case_label_ESC,ending_label_ESC_bival)
+average_densities(case_label_ESC,ending_label_ESC_relax_bival)
+
+average_densities(case_label_CNCC,ending_label_CNCC_K27)
+average_densities(case_label_CNCC,ending_label_CNCC_K4)
+average_densities(case_label_CNCC,ending_label_CNCC_bival)
+average_densities(case_label_CNCC,ending_label_CNCC_relax_bival)
+
+average_densities(case_label_NSC,ending_label_NSC_K27)
+average_densities(case_label_NSC,ending_label_NSC_K4)
+average_densities(case_label_NSC,ending_label_NSC_bival)
+average_densities(case_label_NSC,ending_label_NSC_relax_bival)
+
+```
+
+```{bash, eval = F}
+
+cd /stem_cells//broad/scenario1_multi2/density_plots_BG4_seq_at_promoter_stratified_by_histones2
+gzip *average.matrix
+scp *_average.matrix.gz clust1:~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones2
+```
+
+on the cluster
+```{bash,eval = F}
+
+cd ~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones2
+for file in *average*.matrix.gz
+do
+  sbatch --mem 2G --wrap="plotHeatmap --matrixFile $file  --averageTypeSummaryPlot median -o ${file%%.matrix.gz}.matrix_heatmap.pdf" # --yMax 0.2
+  echo "========================"
+done
+```
+
+locally
+```{bash, eval = F}
+scp clust1:~/Data/20200512_KatieStemCells_BW/density_plots_BG4_seq_at_promoter_stratified_by_histones2/*average.matrix_heatmap.pdf . 
+
+```
+
+### Desity plots obtained by looking at histone modification ChIP-seq and stratyfing by promoter types
+
+
+```{bash, eval=T}
+bw_hist_ESC=~/Data/20200326_extern_stem_cells_data/rada_iglesia_ESC/trimmed/aligned/
+bw_hist_NSC=~/Data/20200326_extern_stem_cells_data/xie_NSC/trimmed/aligned/
+bw_hist_CNCC=~/Data/20200326_extern_stem_cells_data/prescott_CNCC/trimmed/aligned/
+
+
+
+prom_type=(bival H3K27me3_only H3K4me3_only relax_bival)
+cells=(ESC CNCC NSC)
+folder_out_result=~/Data/20200512_KatieStemCells_BW/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4
+path_reference_bed=~/reference_genomes/epigenetic_annotations_stem_cells/promoter_annotated_by_histones
+mkdir $folder_out_result
+
+for prom in ${prom_type[@]}
+  do
+  
+  for cell in ${cells[@]}
+  do
+  path="bw_hist_$cell"
+  cd "${!path}"
+  
+    for bwfile in ${cell}*bw
+    do
+      sbatch --mem 6G --wrap="computeMatrix reference-point -S ${bwfile} -R $path_reference_bed/${prom}*${cell}_anno_promoters_G4*.prom_coord.bed   -a 1000 -b 1000 --outFileName $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.gz --missingDataAsZero && 
+      plotProfile --matrixFile $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.gz -o $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.pdf --averageType median --plotWidth 18 --plotHeight 10 &&
+      plotHeatmap --matrixFile $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix.gz -o $folder_out_result/${bwfile}_${prom}_${cell}_G4.matrix_heatmap.pdf"
+      echo "========================"
+      
+    done
+  done  
+done
+
+```
+
+copy from cluster to local computer
+
+```{bash, eval = F}
+
+copy locally
+```{bash, eval = F}
+#copy  the outcome  locally
+cd /stem_cells//broad/scenario1_multi2
+scp -r  clust1:~/Data/20200512_KatieStemCells_BW/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4 .
+
+```
+
+combine replicates into a single map
+
+```{R, eval = F}
+setwd('/stem_cells//broad/scenario1_multi2/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4')
+#NSC_ATAC*matrix*gz
+#ESC_ATAC*matrix*gz
+#CNCC_ATAC*matrix*gz
+
+
+ending_label_CNCC_K27<-"_H3K27me3_only_CNCC_G4.matrix.gz"
+ending_label_CNCC_K4<-"_H3K4me3_only_CNCC_G4.matrix.gz"
+ending_label_CNCC_bival<-"w_bival_CNCC_G4.matrix.gz"
+ending_label_CNCC_relax_bival<-"_relax_bival_CNCC_G4.matrix.gz"
+
+ending_label_NSC_K27<-"_H3K27me3_only_NSC_G4.matrix.gz"
+ending_label_NSC_K4<-"_H3K4me3_only_NSC_G4.matrix.gz"
+ending_label_NSC_bival<-"w_bival_NSC_G4.matrix.gz"
+ending_label_NSC_relax_bival<-"w_relax_bival_NSC_G4.matrix.gz"
+
+
+case_label_NSC1='NSC_H3K4me3'
+case_label_NSC2='NSC_H3K27me3'
+
+case_label_CNCC='CNCC_H3K4me3_'
+
+source('/stem_cells//broad/scenario1_multi2/average_deeptools_densities.R')
+
+average_densities(case_label_CNCC,ending_label_CNCC_K27)
+average_densities(case_label_CNCC,ending_label_CNCC_K4)
+average_densities(case_label_CNCC,ending_label_CNCC_bival)
+average_densities(case_label_CNCC,ending_label_CNCC_relax_bival)
+
+average_densities(case_label_NSC1,ending_label_NSC_K27)
+average_densities(case_label_NSC1,ending_label_NSC_K4)
+average_densities(case_label_NSC1,ending_label_NSC_bival)
+average_densities(case_label_NSC1,ending_label_NSC_relax_bival)
+
+average_densities(case_label_NSC2,ending_label_NSC_K27)
+average_densities(case_label_NSC2,ending_label_NSC_K4)
+average_densities(case_label_NSC2,ending_label_NSC_bival)
+average_densities(case_label_NSC2,ending_label_NSC_relax_bival)
+
+
+```
+
+```{bash, eval = F}
+
+/stem_cells//broad/scenario1_multi2/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4
+gzip *average.matrix
+scp *_average.matrix.gz clust1:~/Data/20200512_KatieStemCells_BW/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4
+```
+
+on the cluster
+```{bash,eval = F}
+
+cd ~/Data/20200512_KatieStemCells_BW/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4
+for file in *average*.matrix.gz
+do
+  sbatch --mem 2G --wrap="plotHeatmap --matrixFile $file  --averageTypeSummaryPlot median -o ${file%%.matrix.gz}.matrix_heatmap.pdf" # --yMax 0.2
+  echo "========================"
+done
+```
+
+locally
+```{bash, eval = F}
+cd /stem_cells//broad/scenario1_multi2/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4
+scp clust1:~/Data/20200512_KatieStemCells_BW/density_plots_histoneMarks_at_promoter_stratified_by_histones_and_G4/*average.matrix_heatmap.pdf . 
+
+```
+
+### NCP promoter capture Hi-C data for NPC
+
+```{bash, eval = F}
+mkdir ~/Data/20072020_npc_hic
+cd ~/Data/20072020_npc_hic
+
+# data have been downloaded from geo
+GSE86189_npc.po.all.txt
+GSE86189_npc.pp.all.txt
+
+# select first and secon column and remove header
+cut -f 1 GSE86189_npc.pp.all.txt | tail -n +2 > temp1_pp.txt
+cut -f 2 GSE86189_npc.pp.all.txt | tail -n +2 > temp2_pp.txt
+
+# cat together the pp and substitute . with \t
+cat *_pp.txt | sed 's/\./\t/g' | sort | uniq | sortBed -i - > GSE86189_npc.pp.all.bed
+rm *temp*
+
+# do the same for po file
+cut -f 1 GSE86189_npc.po.all.txt | tail -n +2 > temp1_po.txt
+cut -f 2 GSE86189_npc.po.all.txt | tail -n +2 > temp2_po.txt
+
+# cat together the pp and substitute . with \t
+cat *_po.txt | sed 's/\./\t/g' | sort | uniq | sortBed -i - > GSE86189_npc.po.all.bed
+rm *temp*
+
+# cat together also pp and po
+cat GSE86189_npc.pp.all.bed GSE86189_npc.po.all.bed | sort | uniq | sortBed - i - > GSE86189.pp_and_po.bed
+
+
+# create an annotation file
+touch GSE86189_HiC_NPC.pp.po.anno
+awk '{print $1"\t"$2"\t"$3"\tGSE86189_npc.pp"}' GSE86189_npc.pp.all.bed >> GSE86189_HiC_NPC.pp.po.anno
+awk '{print $1"\t"$2"\t"$3"\tGSE86189_npc.po"}' GSE86189_npc.po.all.bed >> GSE86189_HiC_NPC.pp.po.anno 
+
+touch GSE86189_HiC_NPC.pp_and_po.anno
+awk '{print $1"\t"$2"\t"$3"\tGSE86189_npc.pp_and_po"}' GSE86189.pp_and_po.bed >> GSE86189_HiC_NPC.pp_and_po.anno
+
+cp ~/Data/20072020_npc_hic/*anno ~/reference_genomes/epigenetic_annotations_stem_cells
+
+```
+
+## curate H3K27ac annotations for the 3 cell lines 
+ 
+Extract H3K27ac annotations and subtract promoter annotations
+
+```{bash, eval = F}
+
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+
+ESC_anno=Rada_Iglesias_lifted_hg38.bed
+CNCC_anno=CNCC_annotations_hg38_no_.bed
+NEC_anno=NEC_GSE24447_annotations_hg38_no_.bed
+NSC_anno=encodeH1_histone_released_H3histMark_hg38_no_.bed
+prom=~/reference_genomes/hg38/gencode.v28.TSS.slop1000.bed
+
+annotation_list1=($ESC_anno $CNCC_anno $NSC_anno)
+cd $path_anno
+touch H3K27ac_hg38.ESC.CNCC_NSC.anno
+grep "H3K27ac" $ESC_anno | intersectBed -a - -b $prom -v | awk '{print $1"\t"$2"\t"$3"\tH3K27ac_ESC"}' >>H3K27ac_hg38.ESC.CNCC_NSC.anno 
+
+grep "K27ac" $CNCC_anno | intersectBed -a - -b $prom  -v | awk '{print $1"\t"$2"\t"$3"\tH3K27ac_CNCC"}' >>H3K27ac_hg38.ESC.CNCC_NSC.anno 
+
+grep "H3K27ac" $NSC_anno | intersectBed -a - -b $prom -v | awk '{print $1"\t"$2"\t"$3"\tH3K27ac_NSC"}' >>H3K27ac_hg38.ESC.CNCC_NSC.anno 
+
+```
+
+Revisit H1ESC_Xie_2013 enhancers and expand them to 200bp
+
+```{bash, eval = F}
+cd ~/reference_genomes/epigenetic_annotations_stem_cells/additional_annotations_various_stem_cells
+ls *Xie_2013*_hg38.hg38.bed  
+
+touch Xie_2013_enhancers_H1ESC_NSC.anno
+
+for file in *Xie_2013*_hg38.hg38.bed
+do
+  label=${file%%_hg18*}
+  awk -v a="$label" '{print $1"\t"int(($3+$2)/2+0.49)"\t"int(($3+$2)/2+0.49)"\t"a}' $file > temp
+  #slop bed with -b 100
+  slopBed -i temp -g ~/reference_genomes/hg38/hg38.genome -b 100 >> Xie_2013_enhancers_H1ESC_NSC.anno
+  rm temp  
+done
+
+cp Xie_2013_enhancers_H1ESC_NSC.anno ~/reference_genomes/epigenetic_annotations_stem_cells/
+
+```
+
+produce fold enrichment and proportion of regions overlapping
+
+```{bash, eval =F}
+
+
+#scenario=(scenario1_multi2 scenario2_5out9 scenario3_multi2_extended_1kb)
+scenario=(scenario1_multi2)
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+#genomic_annotation=genomic_regions_UCSC_hg38_igenomes.bed6.bed
+
+H3K27ac_cells=H3K27ac_hg38.ESC.CNCC_NSC.anno
+Xie_2013_enhancers=Xie_2013_enhancers_H1ESC_NSC.anno
+
+NPC_promoter_capture_po_pp=GSE86189_HiC_NPC.pp.po.anno
+NPC_promoter_capture_po_and_pp=GSE86189_HiC_NPC.pp_and_po.anno
+
+
+annotation_list1=($H3K27ac_cells $Xie_2013_enhancers $NPC_promoter_capture_po_pp $NPC_promoter_capture_po_and_pp)
+
+#~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common/*C.bed
+#annotation_list1=($genomic_annotation)
+
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2
+bed_to_use=`ls *bed | grep -v shuffle | grep -v intermediate`
+mkdir ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario_additional_July20
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+for file in ${bed_to_use[@]}
+do
+  echo $file
+  for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+        
+      # collect the features in the annotation file
+      res_feature_annot_list=${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_featNames
+      feat=`cut -f 4 $path_anno/$anno | sort | uniq`
+      cut -f 4 $path_anno/$anno | sort | uniq >$res_feature_annot_list 
+      n_feat=`cut -f 4 $path_anno/$anno | sort | uniq | wc -l`
+      res_feature_annot=${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_feat
+      res_feature_annot_fin=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario_additional_July20/${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_feat.tab
+      # for each feature in the annotation count number of overlaps with bed (how many intervals in bed are in feature (unique)
+      for f in ${feat[@]}
+        do
+          echo $f
+          cat $path_anno/$anno  | awk -v var=$f '$4 ~ var' > feature_annot_tmp.bed
+          intersectBed -a $file -b feature_annot_tmp.bed -wa | sort | uniq | wc -l >> $res_feature_annot
+        done
+        # reformat results into a single file
+        paste $res_feature_annot_list $res_feature_annot >> temp_res_feat
+        wc -l $file  | awk '{print $2"\t"$1}'| cat - temp_res_feat > $res_feature_annot_fin
+        rm $res_feature_annot_list
+        rm $res_feature_annot
+        rm temp_res_feat
+        rm feature_annot_tmp.bed
+    done
+done
+
+
+
+
+
+#########################
+cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario1/${file%%.bed}_${anno%%.bed}.dat -t 4"
+    echo ${file%%.bed}_${anno%%.bed}.dat
+    echo $cmd_gat
+    sbatch --mem 6G --wrap "$cmd_gat"
+
+#############
+```
+
+
+```{bash, eval = F}
+
+scenario=(scenario1_multi2)
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+#genomic_annotation=genomic_regions_UCSC_hg38_igenomes.bed6.bed
+
+H3K27ac_cells=H3K27ac_hg38.ESC.CNCC_NSC.anno
+Xie_2013_enhancers=Xie_2013_enhancers_H1ESC_NSC.anno
+
+NPC_promoter_capture_po_pp=GSE86189_HiC_NPC.pp.po.anno
+NPC_promoter_capture_po_and_pp=GSE86189_HiC_NPC.pp_and_po.anno
+
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+
+annotation_list1=($H3K27ac_cells $Xie_2013_enhancers $NPC_promoter_capture_po_pp $NPC_promoter_capture_po_and_pp)
+
+#cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2
+#bed_to_use=`ls *.bed | grep -v shuffle | grep -v intermediate`
+
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common
+bed_to_use=`ls *C.bed`
+#
+
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+for file in ${bed_to_use[@]}
+do
+  echo $file
+  for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario_additional_July20/${file%%.bed}_${anno%%.bed}.dat -t 4"
+    echo ${file%%.bed}_${anno%%.bed}.dat
+    echo $cmd_gat
+    sbatch --time 01:00:00 --mem 6G --wrap "$cmd_gat"
+    done
+done
+
+```
+## enrichements at PAX6 NSC
+
+```{bash, eval = F}
+
+cd ~/Data/21072020_pax6ChIP_NEC
+awk '{print $1"\t"$2"\t"$3"\tpax6ChIP_NEC"}' Pax6.NEC.default_peaks.top15795.qval25.bed > Pax6.NEC.default_peaks.top15795.qval25.anno
+
+cp Pax6.NEC.default_peaks.top15795.qval25.anno ~/reference_genomes/epigenetic_annotations_stem_cells
+
+cd ~/reference_genomes/epigenetic_annotations_stem_cells
+
+#script_for_count_feat_overlaps_pax6nec_pariwise_interaction.sh
+
+# prepare file for enrichment run#
+
+sbatch --time 1:00:00 script_for_count_feat_overlaps_pax6nec_pariwise_interaction.sh
+
+cat script_for_count_feat_overlaps_pax6nec_pariwise_interaction.sh
+#!/bin/bash
+#SBATCH --mem 4G
+
+
+scenario=(scenario1_multi2)
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+#genomic_annotation=genomic_regions_UCSC_hg38_igenomes.bed6.bed
+
+PAS6_NEC=Pax6.NEC.default_peaks.top15795.qval25.anno
+
+annotation_list1=($PAS6_NEC)
+
+#~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common/*C.bed
+#annotation_list1=($genomic_annotation)
+
+#bed_to_use=`ls *bed | grep -v shuffle | grep -v intermediate`
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common
+bed_to_use=`ls *C.bed`
+
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+for file in ${bed_to_use[@]}
+do
+  echo $file
+  for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+        
+      # collect the features in the annotation file
+      res_feature_annot_list=${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_featNames
+      feat=`cut -f 4 $path_anno/$anno | sort | uniq`
+      cut -f 4 $path_anno/$anno | sort | uniq >$res_feature_annot_list 
+      n_feat=`cut -f 4 $path_anno/$anno | sort | uniq | wc -l`
+      res_feature_annot=${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_feat
+      res_feature_annot_fin=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario_additional_PAX6Nec/${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_feat.tab
+      # for each feature in the annotation count number of overlaps with bed (how many intervals in bed are in feature (unique)
+      for f in ${feat[@]}
+        do
+          echo $f
+          cat $path_anno/$anno  | awk -v var=$f '$4 ~ var' > feature_annot_tmp.bed
+          intersectBed -a $file -b feature_annot_tmp.bed -wa | sort | uniq | wc -l >> $res_feature_annot
+        done
+        # reformat results into a single file
+        paste $res_feature_annot_list $res_feature_annot >> temp_res_feat
+        wc -l $file  | awk '{print $2"\t"$1}'| cat - temp_res_feat > $res_feature_annot_fin
+        rm $res_feature_annot_list
+        rm $res_feature_annot
+        rm temp_res_feat
+        rm feature_annot_tmp.bed
+    done
+done
+
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common
+bed_to_use=`ls *C.bed`
+
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+for file in ${bed_to_use[@]}
+do
+  echo $file
+  for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+        
+      # collect the features in the annotation file
+      res_feature_annot_list=${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_featNames
+      feat=`cut -f 4 $path_anno/$anno | sort | uniq`
+      cut -f 4 $path_anno/$anno | sort | uniq >$res_feature_annot_list 
+      n_feat=`cut -f 4 $path_anno/$anno | sort | uniq | wc -l`
+      res_feature_annot=${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_feat
+      res_feature_annot_fin=~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario_additional_PAX6Nec/${file%%.bed}_intervals_${anno%%.bed}.overlaps.tot_${n_feat}_feat.tab
+      # for each feature in the annotation count number of overlaps with bed (how many intervals in bed are in feature (unique)
+      for f in ${feat[@]}
+        do
+          echo $f
+          cat $path_anno/$anno  | awk -v var=$f '$4 ~ var' > feature_annot_tmp.bed
+          intersectBed -a $file -b feature_annot_tmp.bed -wa | sort | uniq | wc -l >> $res_feature_annot
+        done
+        # reformat results into a single file
+        paste $res_feature_annot_list $res_feature_annot >> temp_res_feat
+        wc -l $file  | awk '{print $2"\t"$1}'| cat - temp_res_feat > $res_feature_annot_fin
+        rm $res_feature_annot_list
+        rm $res_feature_annot
+        rm temp_res_feat
+        rm feature_annot_tmp.bed
+    done
+done
+```
+run gat enrichments
+
+```{bash, eval = F}
+
+
+scenario=(scenario1_multi2)
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+#genomic_annotation=genomic_regions_UCSC_hg38_igenomes.bed6.bed
+PAS6_NEC=Pax6.NEC.default_peaks.top15795.qval25.anno
+
+annotation_list1=($PAS6_NEC)
+
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2
+bed_to_use=`ls *.bed | grep -v shuffle | grep -v intermediate`
+
+
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+for file in ${bed_to_use[@]}
+do
+  echo $file
+  for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario_additional_PAX6Nec/${file%%.bed}_${anno%%.bed}.dat -t 4"
+    echo ${file%%.bed}_${anno%%.bed}.dat
+    echo $cmd_gat
+    sbatch --time 01:00:00 --mem 6G --wrap "$cmd_gat"
+    done
+done
+
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/bed_intersections_common
+bed_to_use=`ls *C.bed`
+#
+
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+for file in ${bed_to_use[@]}
+do
+  echo $file
+  for anno in ${annotation_list1[@]}
+    do
+      echo $anno
+      cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/Fold_enrichment_scenario_additional_PAX6Nec/${file%%.bed}_${anno%%.bed}.dat -t 4"
+    echo ${file%%.bed}_${anno%%.bed}.dat
+    echo $cmd_gat
+    sbatch --time 01:00:00 --mem 6G --wrap "$cmd_gat"
+    done
+done
+
+```
+
+
+
+[R script to create bed coordinates of promoters stratified by histone modifications and G4 presence/absence (bival, H3K4me3...etc)](/stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4/BG4_based_promoter_annotations_for_atacDensityPlots_at_TSS.R)
+
+[Rmd to generate density plots at promoters stratified by histone modifications and G4 presence/absence (bival, H3K4me3...etc)](/stem_cells//broad/scenario1_multi2/20200421_annotated_promoters_using_histones_G4/Analysis_G4_location_in_respect_to_histone_marks.Rmd)

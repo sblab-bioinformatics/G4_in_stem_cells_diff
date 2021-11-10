@@ -1,0 +1,44 @@
+---
+title: "README"
+output: html_document
+---
+
+
+# G4 in stem cells and differentiation
+
+
+This repository collects customised code and scripts (bash, R) used for the analysis of stem cells by G4-ChIP-seq, by RNA-seq and by ATAC-seq.  <br />  <br />
+A total of 62 samples have been processed and they are deposited on [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE161531). 
+
+The goal of the study was to study G4 in a stem cell system and differentiation. Human embryonic stem cells have been used here and they have been differentiated into two dinstinct states: CNCC cells (Cranial Neural Crest Cells) and NSC (Neuro Stem cells). <br />  <br />
+
+The cells have been profiled by G4-ChIP-seq, RNA-seq and ATAC-seq and we processed and analysed them. 
+
+### Sequencing processing and data analysis
+
+In the following there is the customised bash code and R scripts used to perform the basic processing of the sequencing data and to perform the higher level analysis. 
+
+- [**Processing of ATAC-seq**](./processing_ATAC_seq.html)
+
+- [**Processing of RNA-seq**](./processing_RNA_seq.html)
+
+    - [**Differential gene expression analysis**](./differential_gene_expression_analysis.html)
+
+- [**Processing of external histone mark ChIP-seq**](./processing_external_chip.html)
+
+- [**Processing of G4-ChIP-seq**](./processing_G4_chip.html)
+
+    - [**Differential biding and G4 integration with other data (RNA-seq, ATAC, external, etc..)**](./additional_G4_processing.html)
+    - [**Transcriptional variability**](./transcriptional_variability.html)
+
+
+
+
+
+List of files used for this study:
+
+- [bg4 peaks peaks and signal and final integrated data (g4-atac-histones-transcription)](./G4_relevant_files/)
+- [atac-seq peaks](./ATAC_relevant_files/)
+- [rna-seq counts and TPMs](./rnaseq_relevant_files/)
+- [histone mark peaks](./external_data/)
+

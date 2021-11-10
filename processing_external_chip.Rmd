@@ -1,0 +1,340 @@
+---
+title: "Processing external ChIP-seq (Histone marks)"
+output: html_document
+author: Angela Simeone
+---
+
+We used data for H3K4me3 and H3K27me3 for each of the 3 cells. 
+We donwloaded the data and reprocessed them for hg38.
+
+Annotations ESC
+```
+H3K4me3
+ESC_H3K4me3 ==  Sample GSM602296   == 
+SRR067375
+ESC_H3K27me3 ==  Sample GSM602293 == 
+SRR067372
+
+ #### input
+ESC_input == Sample GSM602292 == 
+SRR067371	
+
+```
+
+Annotation CNCC
+
+```
+H3K27me3_human1_rep1 ==  Sample GSM1817179  == 
+SRR2096422	
+CNCC_H3K27me3_human1_rep1
+
+H3K4me3_human1_rep1  == Sample GSM1817174 == 
+SRR2096417
+CNCC_H3K4me3_human1_rep1
+
+H3K4me3_human2_rep1 ==  Sample GSM1817175 == 
+SRR2096418	
+CNCC_H3K4me3_human2_rep1
+
+H3K4me3_human3_rep1  == Sample GSM1817176 == 
+SRR2096419	
+CNCC_H3K4me3_human3_rep1
+
+ ### input
+Input_human_rep1 == Sample GSM1817222 == 
+SRR2096456	
+CNCC_Input_human_rep1
+
+```
+
+
+Annoations NPC  (neuro stem cells)
+
+```
+H3K27me3 in Neural Progenitor Cells H1 derived renlab.H3K27me3.NPC.02.01 ==  Sample GSM818033 == 
+SRR353319	
+NSC_H3K27me3.NPC.02.01
+
+H3K27me3 in Neural Progenitor Cells; renlab.H3K27me3.NPC.01.01  ==  Sample GSM818032 == 
+SRR353318
+NSC_H3K27me3.NPC.01.01
+
+
+H3K4me3 in Neural Progenitor Cells; renlab.H3K4me3.NPC.01.01 ==  Sample GSM767350 == 
+SRR316168	
+NSC_H3K4me3.NPC.01.01
+
+H3K4me3 in Neural Progenitor Cells; renlab.H3K4me3.NPC.02.01 ==  Sample GSM767351 == 
+SRR316169
+NSC_H3K4me3.NPC.02.01
+
+
+ ### inputs
+ Reference Epigenome: ChIP-Seq Input from Neural Progenitor Cells; renlab.Input.NPC.01.01 == Sample GSM767355 == 
+ SRR316173
+ NSC_Input.NPC.01.01
+ 
+ Reference Epigenome: ChIP-Seq Input from Neural Progenitor Cells; renlab.Input.NPC.02.01 == Sample GSM767356 == 
+ SRR316174
+ NSC_Input.NPC.02.01
+ 
+
+```
+
+
+## Download from GEO 
+
+```{bash, eval = F}
+
+mkdir /stem_cells/extern_stem_cells_data
+cd /stem_cells/extern_stem_cells_data
+
+cd /stem_cells/extern_stem_cells_data/rada_iglesia_ESC
+# download file: prefetch will download and save SRA file related to SRR accession in 
+sbatch --mem 4G --wrap "fastq-dump SRR067375"
+sbatch --mem 4G --wrap "fastq-dump SRR067372"
+cd /stem_cells/extern_stem_cells_data/rada_iglesia_ESC
+SRR_id=(SRR067371)
+for curr_id in ${SRR_id[@]}
+  do
+  sbatch --mem 4G --wrap "fastq-dump --split-files $curr_id && gzip -1 ${curr_id}_1.fastq && gzip -1 ${curr_id}_2.fastq"
+done
+
+mkdir /stem_cells/extern_stem_cells_data/prescott_CNCC
+cd /stem_cells/extern_stem_cells_data/prescott_CNCC
+#H3K27me3_human1_rep1 ==  Sample GSM1817179  == 
+sbatch --mem 4G --wrap "fastq-dump SRR2096422"
+#H3K4me3_human1_rep1  == Sample GSM1817174 == 
+sbatch --mem 4G --wrap "fastq-dump SRR2096417"
+#H3K4me3_human2_rep1 ==  Sample GSM1817175 == 
+sbatch --mem 4G --wrap "fastq-dump SRR2096418"
+#H3K4me3_human3_rep1  == Sample GSM1817176 == 
+sbatch --mem 4G --wrap "fastq-dump SRR2096419"
+cd /stem_cells/extern_stem_cells_data/prescott_CNCC
+SRR_id=(SRR2096456)
+for curr_id in ${SRR_id[@]}
+  do
+  sbatch --mem 4G --wrap "fastq-dump --split-files $curr_id && gzip -1 ${curr_id}_1.fastq && gzip -1 ${curr_id}_2.fastq"
+done
+
+
+mkdir /stem_cells/extern_stem_cells_data/xie_NSC
+cd /stem_cells/extern_stem_cells_data/xie_NSC
+#H3K27me3 in Neural Progenitor Cells H1 derived renlab.H3K27me3.NPC.02.01 ==  Sample GSM818033 == 
+sbatch --mem 4G --wrap "fastq-dump SRR353319"	
+#H3K27me3 in Neural Progenitor Cells; renlab.H3K27me3.NPC.01.01  ==  Sample GSM818032 == 
+sbatch --mem 4G --wrap "fastq-dump SRR353318"	
+
+#H3K4me3 in Neural Progenitor Cells; renlab.H3K4me3.NPC.01.01 ==  Sample GSM767350 == 
+sbatch --mem 4G --wrap "fastq-dump SRR316168"	
+#H3K4me3 in Neural Progenitor Cells; renlab.H3K4me3.NPC.02.01 ==  Sample GSM767351 == 
+sbatch --mem 4G --wrap "fastq-dump SRR316169"	
+# download inputs
+cd /stem_cells/extern_stem_cells_data/xie_NSC
+SRR_id=(SRR316173 SRR316174)
+for curr_id in ${SRR_id[@]}
+  do
+  sbatch --mem 4G --wrap "fastq-dump --split-files $curr_id && gzip -1 ${curr_id}_1.fastq && gzip -1 ${curr_id}_2.fastq"
+done
+
+```
+
+## Data processing 
+
+```{bash, eval = F}
+cd /stem_cells/extern_stem_cells_data
+
+path_to_process=(prescott_CNCC rada_iglesia_ESC xie_NSC)
+
+for dir in ${path_to_process[@]}
+do
+  cd /stem_cells/extern_stem_cells_data/$dir
+  mkdir trimmed
+  pwd
+  for fq in *.fastq.gz
+  do
+    bname=`basename $fq`
+    sbatch --mem 16000 --wrap "cutadapt -q 20 -O 3 -a n -o trimmed/${bname%%.fastq.gz}.trimmed.fq.gz $fq"
+  done
+  echo "======"
+done
+
+
+cd /stem_cells/extern_stem_cells_data
+
+path_to_process=(prescott_CNCC rada_iglesia_ESC xie_NSC)
+
+g='/scratcha/sblab/simeon01/reference_genomes/hg38/hg38_selected.fa'
+w='/scratcha/sblab/simeon01/reference_genomes/hg38/hg38.whitelist.sorted.bed'
+
+for dir in ${path_to_process[@]}
+do
+  cd /stem_cells/extern_stem_cells_data/$dir/trimmed
+  mkdir aligned
+  pwd
+  
+  for f in *gz
+  do
+      sbatch -o %j.$f.tmp.out -e %j.$f.tmp.err --mem 16000 --wrap "bwa mem -M $g $f | samtools view -S -u -F2304 -q 10 -L $w - | samtools sort -@ 8 - > aligned/${f%%.trimmed.fq.gz}.hg38.sort.bam"
+  done
+  echo " ====== "
+done
+
+
+cd /stem_cells/extern_stem_cells_data
+path_to_process=(prescott_CNCC rada_iglesia_ESC)
+
+for dir in ${path_to_process[@]}
+do
+  cd /stem_cells/extern_stem_cells_data/$dir/trimmed/aligned
+  for bam in *hg38.sort.bam
+  do
+    sbatch -o %j.$bam.tmp.out -e %j.$bam.tmp.err --mem 32000  --wrap "java -Xmx7g -jar /home/simeon01/applications/picard-2.20.3.jar MarkDuplicates INPUT=$bam OUTPUT=${bam%%.bam}.markduplicates.bam REMOVE_DUPLICATES=true  AS=true METRICS_FILE=${bam%%.bam}.markduplicates_metrics.txt"
+  done
+done
+
+for file in *.sort.bam
+  do
+  bam_hg38=$file
+  #bam_f_nodup=${bam%%.hg38.sort.bam}.hg38.sort.markduplicates.bam
+  bam_hg38_nodup=${file%%.bam}.markduplicates.bam
+  
+  ls -lth $bam_hg38
+  echo "====="
+  ls -lth $bam_hg38_nodup
+  
+  sbatch  --mem 4G --wrap "samtools view -c -F 260 $bam_hg38 >  ${file%%.bam}.stat2"
+  sbatch  --mem 4G --wrap "samtools view -c -F 260 $bam_hg38_nodup >  ${file%%.bam}.stat5"
+done
+
+for bam in *.markduplicates.bam
+	do
+  sbatch -o %j.out.log --mem 16G --wrap "samtools index $bam"
+done
+
+for bam in *.markduplicates.bam
+	do
+    	tot_r_hg38=`cat ${bam%%.markduplicates.bam}.stat5`
+    	scal_factor_hg38=$(awk -v m=$tot_r_hg38 'BEGIN { print 1000000/m }')
+    	echo $scal_factor_hg38
+      echo sbatch --mem 16G --wrap "bamCoverage --scaleFactor $scal_factor_hg38 -bs 10 -b $bam -of \"bigwig\" -o ${bam%%.markduplicates.bam}.w10.rpm.bw"
+    	sbatch --mem 16G --wrap "bamCoverage --scaleFactor $scal_factor_hg38 -bs 10 -b $bam -of \"bigwig\" -o ${bam%%.markduplicates.bam}.w10.rpm.bw"
+    	echo "=============="
+done
+
+
+## PEAK CALLING ESC
+cd /stem_cells/extern_stem_cells_data/rada_iglesia_ESC/trimmed/aligned
+mkdir macs2_peaks
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR067375.hg38.sort.markduplicates.bam -c SRR067371_1.hg38.sort.markduplicates.bam -n macs2_peaks/H3K4me3_SRR067375_vs_SRR067371"
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR067372.hg38.sort.markduplicates.bam -c SRR067371_1.hg38.sort.markduplicates.bam -n macs2_peaks/H3K27me3_SRR067372_vs_SRR067371"
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR067372.hg38.sort.markduplicates.bam -c SRR067371_1.hg38.sort.markduplicates.bam --broad -n macs2_peaks/H3K27me3_SRR067372_vs_SRR067371"
+
+#H3K4me3
+#ESC_H3K4me3 ==  Sample GSM602296   == 
+#SRR067375
+#ESC_H3K27me3 ==  Sample GSM602293 == 
+#SRR067372
+#### input
+#ESC_input == Sample GSM602292 == 
+#SRR067371	
+
+## PEAK CALLING CNCC
+cd /stem_cells/extern_stem_cells_data/prescott_CNCC/trimmed/aligned
+mkdir macs2_peaks
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR2096422.hg38.sort.markduplicates.bam -c SRR2096456_1.hg38.sort.markduplicates.bam -n macs2_peaks/H3K27me3_SRR2096422_vs_SRR2096456"
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR2096417.hg38.sort.markduplicates.bam -c SRR2096456_1.hg38.sort.markduplicates.bam -n macs2_peaks/H3K4me3_human1_rep1_SRR2096417_vs_SRR2096456"
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR2096418.hg38.sort.markduplicates.bam -c SRR2096456_1.hg38.sort.markduplicates.bam -n macs2_peaks/H3K4me3_human2_rep1_SRR2096418_vs_SRR2096456"
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR2096419.hg38.sort.markduplicates.bam -c SRR2096456_1.hg38.sort.markduplicates.bam -n macs2_peaks/H3K4me3_human3_rep1_SRR2096419_vs_SRR2096456"
+
+## call peaks with broad option for K27 only
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR2096422.hg38.sort.markduplicates.bam -c SRR2096456_1.hg38.sort.markduplicates.bam --broad -n macs2_peaks/H3K27me3_SRR2096422_vs_SRR2096456"
+
+#H3K27me3_human1_rep1 ==  Sample GSM1817179  == 
+#SRR2096422	
+
+#H3K4me3_human1_rep1  == Sample GSM1817174 == 
+#SRR2096417
+
+#H3K4me3_human2_rep1 ==  Sample GSM1817175 == 
+#SRR2096418	
+
+#H3K4me3_human3_rep1  == Sample GSM1817176 == 
+#SRR2096419	
+
+ ### input
+#Input_human_rep1 == Sample GSM1817222 == 
+#SRR2096456	
+
+
+### CALL PEAKS FOR NSC
+
+cd /stem_cells/extern_stem_cells_data/xie_NSC/trimmed/aligned
+mkdir macs2_peaks
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR353319.hg38.sort.markduplicates.bam -c SRR316174_1.hg38.sort.markduplicates.bam  -n macs2_peaks/renlab.H3K27me3.NPC.02.01_SRR353319_vs_SRR316174"
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR353318.hg38.sort.markduplicates.bam -c SRR316173_1.hg38.sort.markduplicates.bam -n macs2_peaks/renlab.H3K27me3.NPC.01.01_SRR353319_vs_SRR316173"
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR316168.hg38.sort.markduplicates.bam -c SRR316173_1.hg38.sort.markduplicates.bam -n macs2_peaks/renlab.H3K4me3.NPC.01.01_SRR316168_vs_SRR316173"
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR316169.hg38.sort.markduplicates.bam -c SRR316174_1.hg38.sort.markduplicates.bam -n macs2_peaks/renlab.H3K4me3.NPC.02.01_SRR316169_vs_SRR316174"
+
+## call peaks with broad option for K27 only
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR353319.hg38.sort.markduplicates.bam -c SRR316174_1.hg38.sort.markduplicates.bam  --broad -n macs2_peaks/renlab.H3K27me3.NPC.02.01_SRR353319_vs_SRR316174"
+
+sbatch --mem 16G --wrap="macs2 callpeak --keep-dup all -t SRR353318.hg38.sort.markduplicates.bam -c SRR316173_1.hg38.sort.markduplicates.bam --broad -n macs2_peaks/renlab.H3K27me3.NPC.01.01_SRR353319_vs_SRR316173"
+
+#H3K27me3 in Neural Progenitor Cells H1 derived renlab.H3K27me3.NPC.02.01 ==  Sample GSM818033 == 
+#SRR353319	
+#H3K27me3 in Neural Progenitor Cells; renlab.H3K27me3.NPC.01.01  ==  Sample GSM818032 == 
+#SRR353318	
+
+#H3K4me3 in Neural Progenitor Cells; renlab.H3K4me3.NPC.01.01 ==  Sample GSM767350 == 
+#SRR316168	
+#H3K4me3 in Neural Progenitor Cells; renlab.H3K4me3.NPC.02.01 ==  Sample GSM767351 == 
+#SRR316169	
+
+### inputs
+#Reference Epigenome: ChIP-Seq Input from Neural Progenitor Cells; renlab.Input.NPC.01.01 == Sample GSM767355 == 
+#SRR316173
+#Reference Epigenome: ChIP-Seq Input from Neural Progenitor Cells; renlab.Input.NPC.02.01 == Sample GSM767356 == 
+#SRR316174
+
+```
+
+
+For the annotation of the bivalent promoters only the 2 histone marks are used: H3K4me3 and H3K27me3.
+
+```{bash ,eval = F}
+#locally /Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw
+cd /Users/simeon01/Documents/Katie/Annotations_Cells_Angela/bw
+
+multiIntersectBed -i H3K4me3_human*_rep*.narrowPeak | awk '{if ($4>=2) print $0 }' | sortBed -i - |mergeBed -i - > H3K4me3_human1.multi2.bed
+ls 
+intersectBed -a H3K27me3_SRR2096422_vs_SRR2096456_peaks.broadPeak -b H3K4me3_human1.multi2.bed | sort | uniq | wc -l
+intersectBed -a H3K27me3_SRR2096422_vs_SRR2096456_peaks.narrowPeak -b H3K4me3_human1.multi2.bed | sort | uniq | wc -l
+intersectBed -a H3K27me3_SRR2096422_vs_SRR2096456_peaks.narrowPeak -b H3K4me3_human1.multi2.bed | sort | uniq | wc -l
+
+intersectBed -a H3K27me3_SRR2096422_vs_SRR2096456_peaks.narrowPeak -b H3K4me3_human1.multi2.bed | sort | uniq > CNCC_bival_regions.H3K27me3_SRR2096422.H3K4me3_human1.multi2.intersect.bed
+
+intersectBed -a H3K27me3_SRR2096422_vs_SRR2096456_peaks.broadPeak -b H3K4me3_human1.multi2.bed | sort | uniq > CNCC_bival_regions.H3K27me3_SRR2096422.broad.H3K4me3_human1.multi2.intersect.bed
+
+#K27 narrowPeak
+intersectBed -a renlab.H3K27me3.NPC.01.01_SRR353319_vs_SRR316173_peaks.narrowPeak -b renlab.H3K27me3.NPC.02.01_SRR353319_vs_SRR316174_peaks.narrowPeak | sortBed -i - | mergeBed -i - > renlab.H3K27me3.NPC.intersect.bed
+
+intersectBed -a renlab.H3K4me3.NPC.01.01_SRR316168_vs_SRR316173_peaks.narrowPeak -b renlab.H3K4me3.NPC.02.01_SRR316169_vs_SRR316174_peaks.narrowPeak | sortBed -i - | mergeBed -i - >renlab.H3K4me3.NPC.intersect.bed 
+intersectBed -a renlab.H3K27me3.NPC.intersect.bed -b renlab.H3K4me3.NPC.intersect.bed > NSC_bival_regions.renlab.H3K27me3.H3K4me3.intersect.bed
+
+#K27 broadPeak
+intersectBed -a renlab.H3K27me3.NPC.01.01_SRR353319_vs_SRR316173_peaks.broadPeak -b renlab.H3K27me3.NPC.02.01_SRR353319_vs_SRR316174_peaks.broadPeak | sortBed -i - | mergeBed -i - > renlab.H3K27me3.broad.NPC.intersect.bed
+
+intersectBed -a renlab.H3K4me3.NPC.01.01_SRR316168_vs_SRR316173_peaks.narrowPeak -b renlab.H3K4me3.NPC.02.01_SRR316169_vs_SRR316174_peaks.narrowPeak | sortBed -i - | mergeBed -i - >renlab.H3K4me3.NPC.intersect.bed 
+intersectBed -a renlab.H3K27me3.broad.NPC.intersect.bed -b renlab.H3K4me3.NPC.intersect.bed > NSC_bival_regions.renlab.H3K27me3.broad.H3K4me3.intersect.bed
+```
+
+

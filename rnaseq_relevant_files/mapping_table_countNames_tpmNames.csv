@@ -1,0 +1,17 @@
+expected_counts_techrep,tpm_filenames
+1,H9_NSC_NA_p4.2,sample_10_H9_NSC
+2,H9_NSC_NA_p4.3,sample_11_H9_NSC
+3,H9_NSC_NA_p4.4,sample_12_H9_NSC
+4,H9_hESC_NA_p10,sample_19_H9_hESC
+5,H9_hESC_NA_p11,sample_20_H9_hESC
+6,H9_hESC_NA_p12,sample_21_H9_hESC
+7,H9_CNCC_A2_p16,sample_25_H9_CNCC_A2
+8,H9_CNCC_B4_p17,sample_26_H9_CNCC_B4
+9,H9_CNCC_B3_p19,sample_28_H9_CNCC_B3
+10,H9_hESC_NA_p3,sample_35_H9_hESC
+11,H9_hESC_NA_p3,sample_36_H9_hESC
+12,H9_hESC_NA_p2,sample_5_H9_hESC
+13,H9_hESC_NA_p2,sample_6_H9_hESC
+14,H9_hESC_NA_p3,sample_7_H9_hESC
+15,H9_hESC_NA_p3,sample_8_H9_hESC
+16,H9_NSC_NA_p4.1,sample_9_H9_NSC

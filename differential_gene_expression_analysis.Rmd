@@ -1,0 +1,207 @@
+---
+title: "Differential Gene Expression Analysis"
+output: html_document
+author: Angela Simeone
+---
+
+Differential Analysis have been performed using the expected counts obtained after alignment (rsem using bowtie2) to transcriptome. We used counts obtained in `genes.results` files. <br /> <br />
+
+
+```{bash, eval = F}
+#' @title Perform differential gene analysis
+#' @description Perform differential gene analysis with EdgeR after importing counts (where technical rep have been summed up) and groups
+#' @param total number of counts in each biological library
+#' @return edgeR summary table for each comparison
+#' @author angela simeone  \email{angela.simeone@gmail.com}
+
+# =============================================================================================
+# LOAD PACKAGES and FUNCTIONS
+# ==============================================================================================
+library('edgeR')
+library('ggplot2')
+library('gridExtra')
+library('corrplot')
+library('ComplexHeatmap')
+require('openxlsx')
+library('tydiverse')
+
+# FUNCTION TO IMPORT RSEM results - customized for RSEM - gene.results file
+extract_counts_TPM <- function(rsem_lists_to_import,condition_names_to_assign){
+  Table_expected_counts <- c()
+  Table_TPM <- c()
+  for (i in 1:length(rsem_lists_to_import))
+  {
+    temp_read <- read.table(rsem_lists_to_import[i], stringsAsFactors = F, header = T)
+    Table_expected_counts <- cbind(Table_expected_counts,temp_read$expected_count)
+    Table_TPM <- cbind(Table_TPM,temp_read$TPM)
+  }
+  colnames(Table_expected_counts) <- condition_names_to_assign
+  colnames(Table_TPM) <- condition_names_to_assign
+  rownames(Table_expected_counts) <- temp_read$gene_id
+  rownames(Table_TPM) <- temp_read$gene_id
+  # store effected length
+  gene_eff_lengths <- temp_read$effective_length
+  names(gene_eff_lengths) <- temp_read$gene_id
+  rsem_tables = list('Table_expected_counts' = Table_expected_counts,'Table_TPM' = Table_TPM, 'genes_effective_lengths' = gene_eff_lengths)
+  return(rsem_tables)
+}
+
+# FUNCTION THAT ITERATES ALL COMBINATIONS OF DIFFERENTIAL ANALYSIS
+DE_analysis_routine <- function(y_DEGL,fit_of_interest, contrast_of_interest,flag_for_name_to_use) {
+  
+  
+  All_DE_list_genes <- c()
+  #DE_analysis_routine(y,fit,my.contrast)
+  y_DEGL <- y
+  fit_of_interest <- fit
+  contrast_of_interest <- my.contrast
+  
+  for (i in 1:length(colnames(contrast_of_interest))) {
+    print(i)
+    print(length(colnames(contrast_of_interest)))
+    
+    qlf <- glmQLFTest(fit_of_interest, contrast=contrast_of_interest[,i])
+    
+    de_pairing_table_curr_case <- topTags(qlf, n= nrow(y_DEGL$counts))$table
+    
+    de_fdr05_lfg2 = de_pairing_table_curr_case[which(de_pairing_table_curr_case$FDR <=0.05 & abs(de_pairing_table_curr_case$logFC)>=2),]
+    
+    #decideTestsDGE(qlf,adjust.method="BH", p.value = 0.05,lfc=0)
+    
+    list_genes_up <- rownames(de_fdr05_lfg2[(which(de_fdr05_lfg2$logFC>0)),])
+    
+    list_genes_up_ensembl <- matrix(unlist(strsplit(list_genes_up,split = "\\.[0-9]{1,2}_", perl = TRUE)),length(list_genes_up), byrow = T)
+    
+    list_genes_down <- rownames(de_fdr05_lfg2[(which(de_fdr05_lfg2$logFC<0)),])
+    
+    list_genes_down_ensembl <- matrix(unlist(strsplit(list_genes_down,split = "\\.[0-9]{1,2}_", perl = TRUE)),length(list_genes_down), byrow = T)
+    
+    output_decide_test <- decideTests(qlf,lfc = 2)
+    
+    summary_report <- summary(output_decide_test) # this are default --> adjust.method = "BH", p.value = 0.05
+    
+    All_DE_list_genes <- c(All_DE_list_genes,union(list_genes_up,list_genes_down))
+    
+  
+    Summary_current_case = list('summary' = summary_report,
+                                'list_genes_UP' = list_genes_up,
+                                'list_genes_UP_ensembl' = list_genes_up_ensembl,
+                                'list_genes_DOWN' = list_genes_down,
+                                'list_genes_DOWN_ensembl' = list_genes_down_ensembl)
+    names(Summary_current_case) = c('summary','list_genes_UP','list_genes_UP_ensembl',
+                                    'list_genes_DOWN','list_genes_DOWN_ensembl')
+    
+    EdgeR_results <- list(de_pairing_table_curr_case,de_fdr05_lfg2)
+    names(EdgeR_results) <- c('full_table','FDR05_LFG2')
+    
+    write.table(output_decide_test, file = paste0(flag_for_name_to_use,"_summary_list_decide_test_",colnames(my.contrast)[i],".csv"),sep = ",",quote = F, col.names = NA)
+    write.xlsx(Summary_current_case, file = paste0(flag_for_name_to_use,"_summary_list_",colnames(my.contrast)[i],".xlsx"))
+    write.xlsx(EdgeR_results,rowNames=T,rowNames = T,file = paste0(flag_for_name_to_use,"_summary_edgeR_",colnames(my.contrast)[i],".xlsx" ))
+    
+    
+    pdf(paste0(flag_for_name_to_use,"_",colnames(my.contrast)[i],'.MD_plot.pdf'))
+    plotMD(qlf, status=output_decide_test,col=c("blue","black","red"))
+    title(paste0("\n\n UP:",length(list_genes_up)," - DOWN: ",length(list_genes_down)))
+    dev.off()
+    
+    
+  }
+  return(All_DE_list_genes)
+}
+
+# ==================================================================================================================
+# LOAD DATA
+# ==================================================================================================================
+
+Table_expected_counts_sumTechRep_selected_cells_import <- read.table("./rnaseq_relevant_files/Table_expected_counts_sumTechRep_selected_cells_for.csv", sep = ",",header = T)
+Table_expected_counts_sumTechRep_selected_cells <- data.matrix(Table_expected_counts_sumTechRep_selected_cells_import[,-1])
+rownames(Table_expected_counts_sumTechRep_selected_cells) <- Table_expected_counts_sumTechRep_selected_cells_import$X
+
+group_cells_selected_cell_import <- read.table("./rnaseq_relevant_files/group_cells_selected_cell.csv", sep = ",", header = T)
+group_cells_selected_cell <- group_cells_selected_cell_import$x
+
+
+# create DGEList
+y <- DGEList(counts = Table_expected_counts_sumTechRep_selected_cells,group = group_cells_selected_cell)
+
+# CPM
+cpm.y <- cpm(y)
+
+average_cmp.y_by_cell_type <- cbind(rowMeans(cpm.y[,grep('ESC',colnames(cpm.y))]),
+                                    rowMeans(cpm.y[,grep('CNCC',colnames(cpm.y))]),
+                                    rowMeans(cpm.y[,grep('NSC',colnames(cpm.y))]))
+
+#filtering: selecting only genes have have average cpm > 1 in each of the group
+ind_selected <- rowSums(average_cmp.y_by_cell_type >= 1) >= 1
+y_orig <- y
+cpm.y_orig <- cpm.y
+
+y = y[ind_selected,] # at least 1 cell type has a average cpm > 1
+
+cpm.y <- cpm.y[ind_selected,]
+
+library(ComplexHeatmap)
+library(circlize)
+cpm.y_rowAvg <- rowMeans(cpm.y)
+selected_cpm.y <- cpm.y[which(cpm.y_rowAvg>0 & cpm.y_rowAvg<quantile(cpm.y_rowAvg,0.90)),]
+selected_cpm.y_scaled<- scale(selected_cpm.y,scale = T)
+
+# seed 11 was the choosen one ==== replot only ESC, CNCC and NSC
+ind_to_select_for_heatmap <- grep('H9_hESC|H9_CNCC|H9_NSC',colnames(selected_cpm.y_scaled))
+
+group_cells_selected_cell_df2 <- droplevels(as.factor(group_cells_selected_cell[ind_to_select_for_heatmap]))
+
+
+ha2 = HeatmapAnnotation(cell_type = group_cells_selected_cell_df2, annotation_name_side = "left",
+                        col = list(cell_type=c("H9_CNCC" = "deepskyblue3", 
+                                               "H9_hESC" = "firebrick1",
+                                               "H9_NSC"="chartreuse4")))
+
+#for (i in seq(1,100,10)){
+i=11
+set.seed(i)
+ht_list2 = Heatmap(selected_cpm.y_scaled[,ind_to_select_for_heatmap], name = "scaled\nnorm_expr", row_km = 4,col = colorRamp2(c(-1.75, 0, 1.75), c("blue", "white", "red")),
+                   top_annotation = ha2, 
+                   show_column_names = T,show_row_names = FALSE, row_title = NULL, show_row_dend = FALSE,show_column_dend = T) 
+#pdf(paste0('Selected_clust_and_heatmap_rna-seq_cells_seed_',i,'.pdf'))
+draw(ht_list2)
+#dev.off()
+
+
+
+desing_matrix <- model.matrix(~0+group_cells_selected_cell)
+colnames(desing_matrix) <- levels(y$samples$group)
+
+#normalization
+y <- calcNormFactors(y)
+y <- estimateDisp(y,desing_matrix)
+y <- estimateGLMCommonDisp(y,desing_matrix)
+y <- estimateGLMTagwiseDisp(y,desing_matrix)
+
+# QL - Quasi Likelyhood model represenintg the sdtudy design is fitted to the data
+# QL account for gene-specifi variability from both biological and technical sources. 
+# In this framework, the variace of each gene count is a quadratic 
+# 
+
+fit <- glmQLFit(y, desing_matrix)
+
+# comparisons
+#qlf.3vs2 <- glmQLFTest(fit, contrast=c(0,-1,1))
+my.contrast <- makeContrasts(
+  # comparison of hESC
+  H9_CNCC_vs_H9_hESC = H9_CNCC - H9_hESC,
+  H9_NSC_vs_H9_hESC = H9_NSC - H9_hESC,
+  H9_NSC_vs_H9_CNCC = H9_NSC - H9_CNCC,
+  levels = desing_matrix
+  #levels = c("H9_CNCC","H9_hESC","H9_NSC")
+)
+
+# differential anaysis of all pair-wise comparisons
+setwd('./rnaseq_relevant_files')
+flag_for_name <- "Nov2020updated_CNCC3samplesSel_all_others_included"
+DE_genes_ALL <- DE_analysis_routine(y,fit,my.contrast,flag_for_name)
+
+# y_DEGL=y
+# fit_of_interest=fit
+# contrast_of_interest=my.contrast
+```

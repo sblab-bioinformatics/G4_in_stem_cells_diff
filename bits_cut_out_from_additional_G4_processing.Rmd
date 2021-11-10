@@ -1,0 +1,281 @@
+
+## annotate Freire_Pritchett_2017_PIR regions
+
+```{R, eval = F}
+library(dplyr)
+supp_table1 <- read.table('/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/SupplementaryTable1.txt', sep = "\t",stringsAsFactors = F, header = T)
+# this contains the clusters
+supp_table2 <- read.table('/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/SupplementaryTable2.txt', sep = "\t",stringsAsFactors = F, header = T)
+supp_table3 <- read.table('/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/SupplementaryTable3.txt', sep = "\t",stringsAsFactors = F, header = T)
+
+unique(supp_table1$PIRStateESC)
+unique(supp_table1$BaitStateESC)
+
+###  gerenate an annotation for various cases (ESC- specific only)
+
+# == generate PIR bait lists annotation list == 
+# extract CRU as they define it in the paper (see figure3)
+# collection of all PIR plus associated promoter
+PIR_bait_anno <- supp_table1 %>% group_by(bait_ID) %>% select(bait_ID,bait_start,bait_end,BaitStateESC,Associated.Gene.Name,bait_chr) %>% distinct()
+A <- supp_table1 %>% group_by(bait_ID) %>% filter(ESConly=="TRUE" | Both == "TRUE") 
+A_unique_bait_ID <- unique(A$bait_ID)
+CRUs <- matrix(nrow = length(A_unique_bait_ID),ncol = 5)
+for ( i in 1:10){ #length(A_unique_bait_ID)){
+ curr_id  <-  A_unique_bait_ID[i]
+ subset_A <- A[which(A$bait_ID == curr_id),]
+ CRUs[i,] <-c(curr_id,unique(subset_A$bait_chr),as.numeric(min(subset_A[,c(2,3,6,7)])),as.numeric(max(subset_A[,c(2,3,6,7)])),unique(subset_A$Associated.Gene.Name))
+}
+
+CRUs <- data.frame(matrix(nrow = length(A_unique_bait_ID),ncol = 5))
+colnames(CRUs) <- c("cru_chr","cru_start","cru_end","bait_ID","Gene")
+ for ( i in 1:length(A_unique_bait_ID)){
+  curr_id  <-  A_unique_bait_ID[i]
+  #print(curr_id)
+  subset_A <- A[which(A$bait_ID == curr_id),]
+  CRUs$cru_chr[i] <- unique(subset_A$bait_chr)
+  CRUs$cru_start[i] <- min(subset_A[,c(2,3,6,7)])
+  CRUs$cru_end[i] <- max(subset_A[,c(2,3,6,7)])
+  CRUs$bait_ID[i] <- curr_id
+  CRUs$Gene[i] <- unique(subset_A$Associated.Gene.Name)
+  #print(CRUs[i,])
+}
+
+
+PIR_anno <- supp_table1 %>% group_by(PIR_ID) %>% select(PIR_chr,PIR_start,PIR_end,PIRStateESC,Associated.Gene.Name,ESConly,Both,PIRStateESC)
+PIR_anno$combined_ESConly_Both <- gsub("\\s", "",paste(PIR_anno$ESConly,'-',PIR_anno$Both))
+colnames(PIR_anno)
+#[1] "PIR_ID"                "PIR_chr"               "PIR_start"             "PIR_end"               "PIRStateESC"           "Associated.Gene.Name"  "ESConly"             [8] "Both"                  "combined_ESConly_Both"
+# print annotation of PIR to file
+write.table(PIR_bait_anno[,c(6,2,3,4)],file='/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/PIR_bait.anno.bed',col.names = F, row.names=F, quote =F, sep = "\t")
+
+write.table(PIR_anno[,c(2,3,4,5)],file='/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/PIR.anno.bed',col.names = F, row.names=F, quote =F, sep = "\t")
+
+#unique(PIR_anno$combined_ESConly_Both)
+#[1] "FALSE-TRUE"  "TRUE-FALSE"  "FALSE-FALSE"
+PIR_anno.F_T <- PIR_anno[which(PIR_anno$combined_ESConly_Both=="FALSE-TRUE"),]
+PIR_anno.T_F <- PIR_anno[which(PIR_anno$combined_ESConly_Both=="TRUE-FALSE"),]
+PIR_anno.F_F <- PIR_anno[which(PIR_anno$combined_ESConly_Both=="FALSE-FALSE"),]
+write.table(PIR_anno[,c(2,3,4,5)],file='/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/PIR.anno.bed',col.names = F, row.names=F, quote =F, sep = "\t")
+
+write.table(PIR_anno.F_T[,c(2,3,4,5)],file='/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/PIR.FALSE_TRUE.anno.bed',col.names = F, row.names=F, quote =F, sep = "\t")
+
+write.table(PIR_anno.T_F[,c(2,3,4,5)],file='/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/PIR.TRUE_FALSE.anno.bed',col.names = F, row.names=F, quote =F, sep = "\t")
+
+write.table(PIR_anno.F_F[,c(2,3,4,5)],file='/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/PIR.FALSE_FALSE.anno.bed',col.names = F, row.names=F, quote =F, sep = "\t")
+
+##== now export info about clusters
+CRUs_clusters <- left_join(CRUs,supp_table3,by="Gene") %>% filter(!is.na(cluster_ESC)) %>% group_by("Gene") %>% select(cru_chr,cru_start,cru_end,cluster_ESC,bait_ID,Gene,MedianRPKM_ESC)
+
+write.table(CRUs_clusters[,c(2,3,4,5)],file='/Users/simeon01/Documents/Katie/Annotations_Cells_Angela/Freire_Pritchett_2017_PIR_supp_table1/PCRUs_clusters.anno.bed',col.names = F, row.names=F, quote =F, sep = "\t")
+```
+
+## annotation from HiC data have been generated and are moved to cluster
+```{bash, eval = F}
+cd /scratcha/sblab/simeon01/reference_genomes/epigenetic_annotations_stem_cells
+ls -l 
+#-rw-r--r-- 1 simeon01 sblab  173471 Oct  9 16:44 PCRUs_clusters.anno.bed
+#-rw-r--r-- 1 simeon01 sblab 2755144 Oct  9 16:44 PIR.anno.bed
+#-rw-r--r-- 1 simeon01 sblab  402585 Oct  9 16:44 PIR_bait.anno.bed
+#-rw-r--r-- 1 simeon01 sblab  841074 Oct  9 16:44 PIR.FALSE_FALSE.anno.bed
+#-rw-r--r-- 1 simeon01 sblab 1085318 Oct  9 16:44 PIR.FALSE_TRUE.anno.bed
+#-rw-r--r-- 1 simeon01 sblab  828752 Oct  9 16:44 PIR.TRUE_FALSE.anno.bed
+
+chain_hg19_to_hg38=/scratcha/sblab/simeon01/reference_genomes/liftover_chain/hg19ToHg38.over.chain.gz
+for file in *anno.bed
+do
+  echo $file
+  echo ${file%%.bed}.hg38.bed
+  /Users/simeon01/applications/liftOver $file $chain_hg19_to_hg38 ${file%%.bed}.hg38.bed  ${file%%.bed}unmapped
+  #/Users/simeon01/applications/liftOver $file $chain_hg19_to_hg38 ${file%%.bed}.hg38.bed
+done
+
+#remove Chr[d]_ eg. chr7_KI270803v1_alt
+for file in *anno.hg38.bed
+do 
+  echo $file
+  grep -v "_" $file > ${file/hg38.bed/hg38_no_.bed}
+done
+```
+
+## re-define genomic annotations files
+
+```{bash, eval = F}
+tail -n +6  gencode.v28.annotation.sorted.gtf |grep "exon_number 1;"  | awk '{print $1"\t"$4"\t"$5}'| sortBed -i -  > gencode.v28.annotation.exon1.bed
+tail -n +6  gencode.v28.annotation.gtf |grep "exon_number 1;"  |awk '{print $1"\t"$4"\t"$5"\t"$10}' | sed 's/\";//g' |sed 's/\"//g' > gencode.v28.annotation.exon1.ensID.bed
+sortBed -i gencode.v28.genebody.bed | mergeBed -i -  |bedtools complement -i - -g hg38.sorted.genome > gencode.v28.intergenic.bed
+bedtools subtract -a gencode.v28.intergenic.bed -b gencode_v28_exon_merged.bed > gencode_v28_intergenic.exon_subtract.bed
+# generate set of exons without first exons
+bedtools subtract -a gencode_v28_exon_merged.bed -b gencode.v28.annotation.exon1.merged.bed | sortBed -i - | mergeBed -i -  > gencode_v28_exon_minus_first_exons.bed
+bedtools subtract -a gencode.v28.genebody.bed  -b gencode.v28.annotation.exon1.ensID.bed | head
+
+exon=gencode_v28_exon_merged.bed
+intron=gencode.v28.intron.bed
+firstExon=gencode.v28.annotation.exon1.merged.bed
+intergenic=gencode_v28_intergenic.exon_subtract.bed
+gene_body=gencode.v28.genebody.bed
+NoFirstExon=gencode_v28_exon_minus_first_exons.bed
+TSS_single_coord=gencode.v28.TSS.bed
+TSS_1kb_slop=gencode.v28.TSS.slop1000.bed
+
+
+rm annotations_genomic_regions_gencode_v28.anno.bed
+touch annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tAllExons"}' $exon >> annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tFirstExons"}' $firstExon >> annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tNOFirstExons"}' $NoFirstExon >> annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tIntrons"}' $intron >> annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tGeneBody"}' $gene_body >> annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tIntergenic"}' $intergenic >> annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tTSS_single_coord"}' $TSS_single_coord >> annotations_genomic_regions_gencode_v28.anno.bed
+awk '{print $1"\t"$2"\t"$3"\tTSS_1kb"}' $TSS_1kb_slop >> annotations_genomic_regions_gencode_v28.anno.bed
+
+# after producin 3prime and 5 prime, include them in the genomic regions annotations
+cat annotations_genomic_regions_gencode_v28.anno.bed > annotations_genomic_regions_gencode_v28.anno2.bed
+three_prime=gencode.v28.3_UTR.bed
+five_prime=gencode.v28.5_UTR.bed
+awk '{print $1"\t"$2"\t"$3"\t3_prime"}' $three_prime >>annotations_genomic_regions_gencode_v28.anno2.bed
+awk '{print $1"\t"$2"\t"$3"\t5_prime"}' $five_prime >>annotations_genomic_regions_gencode_v28.anno2.bed
+
+```
+
+
+```{bash, eval = F}
+
+
+## Fold enrichment of regions output of the DBA analysis
+
+```{bash, eval = F}
+workspace_gen=~/reference_genomes/hg38/hg38.whitelist.bed
+
+genomic_annotation=annotations_genomic_regions_gencode_v28.anno.bed
+repetitive_annotations=repeatMasker_hg38.elements_no.anno.bed
+
+ESC_anno=Rada_Iglesias_lifted_hg38.bed
+CNCC_anno=CNCC_annotations_hg38_no_.bed
+NEC_anno=NEC_GSE24447_annotations_hg38_no_.bed
+NSC_anno=encodeH1_histone_released_H3histMark_hg38_no_.bed
+
+#annotations derived from HiC paper Freire_Pritchett
+FP_CRUs_anno=PCRUs_clusters.anno.hg38_no_.bed
+FP_PIR_anno=PIR.anno.hg38_no_.bed
+FP_PIR_bait_anno=PIR_bait.anno.hg38_no_.bed
+FP_PIR_FALSE_FALSE_anno=PIR.FALSE_FALSE.anno.hg38_no_.bed
+FP_PIR_FALSE_TRUE_anno=PIR.FALSE_TRUE.anno.hg38_no_.bed
+FP_PIR_TRUE_FALSE_anno=PIR.TRUE_FALSE.anno.hg38_no_.bed
+
+annotation_list1=($genomic_annotation $repetitive_annotations $ESC_anno $NSC_anno $CNCC_anno $FP_CRUs_anno $FP_PIR_anno $FP_PIR_bait_anno $FP_PIR_FALSE_FALSE_anno $FP_PIR_FALSE_TRUE_anno $FP_PIR_TRUE_FALSE_anno)
+
+
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2/DBA_output_regions
+path_anno='~/reference_genomes/epigenetic_annotations_stem_cells'
+for file in *bed
+do
+  echo $file
+  for anno in ${annotation_list1[@]}
+  do
+    echo $anno
+    cmd_gat="gat-run.py --ignore-segment-tracks --workspace=${workspace_gen}  --annotations=$path_anno/${anno} --segments=${file} -S ${file%%.bed}_${anno%%.bed}.dat -t 4"
+    echo ${file%%.bed}_${anno%%.bed}.dat
+    echo $cmd_gat
+    sbatch --mem 6G --wrap "$cmd_gat"
+    echo " "
+  done
+done
+
+
+  
+```
+
+
+## Generate list of genes that include specifically BG4-regions in promoter or in genebody minus exon1
+
+```{bash, eval = F}
+
+# for *differentiallyUP.bed, differentiallyDOWN.bed and differentiallyNOTDE.bed
+# intersect with TSS gencode.v28.TSS.slop1000.bed
+# intersect with TSS gencode.v28.TSS.slop1000.bed
+# intersect with gencode.v28.genebody_minus_exon1.bed
+tss_1000=/Users/simeon01/Documents/genomes/hg38/gencode.v28.TSS.slop1000.bed
+tss_genebody_minus_exon1=/Users/simeon01/Documents/genomes/hg38/gencode.v28.genebody_minus_exon1.bed
+
+cd /stem_cells//broad/scenario1_multi2/coverage_peaks
+all_bed_regions_up=`ls *differentiallyUP.bed`
+all_bed_regions_down=`ls *differentiallyDOWN.bed`
+all_bed_regions_notde=`ls *differentiallyNOTDE.bed`
+for file in ${all_bed_regions_up[@]}
+do
+  intersectBed -a $tss_1000 -b $file -F 1 -wa -wb | sort | uniq > ${file%%.bed}.BG4region_in_promoter.bed
+  intersectBed -a $tss_genebody_minus_exon1 -b $file -F 1 -wa -wb | sort | uniq > ${file%%.bed}.BG4region_in_genebody_minus_exon1.bed
+done
+
+for file in ${all_bed_regions_down[@]}
+do
+  intersectBed -a $tss_1000 -b $file -F 1 -wa -wb | sort | uniq > ${file%%.bed}.BG4region_in_promoter.bed
+  intersectBed -a $tss_genebody_minus_exon1 -b $file -F 1 -wa -wb | sort | uniq > ${file%%.bed}.BG4region_in_genebody_minus_exon1.bed
+done
+
+for file in ${all_bed_regions_notde[@]}
+do
+  intersectBed -a $tss_1000 -b $file -F 1 -wa -wb | sort | uniq > ${file%%.bed}.BG4region_in_promoter.bed
+  intersectBed -a $tss_genebody_minus_exon1 -b $file -F 1 -wa -wb | sort | uniq > ${file%%.bed}.BG4region_in_genebody_minus_exon1.bed
+done
+
+```
+## Additional comparison of static peaks with promoter and bivalent promoters
+
+The analysis is done in 2 steps:
+1. annotate promoter for bivalent marks in the 3 different cell types - keep results as a bed file where first 3 fields are the coordinates of the promoters
+2. overlap promoter and BG4 peaks and keep both informations into the same bed files
+3. import everything in R and plot sizes
+
+```{bash, eval =F}
+# attempt1
+####################  .  ####################  .  ####################  .  ####################  .  ####################
+
+promoter_1kb=~/reference_genomes/hg38/gencode.v28.TSS.slop1000.bed
+Bival_Promoters_ESC=~/Data/Katie_high_level_analysis_Oct2019/Additional_annotations/Rada_Iglesias_lifted_hg38_bivalentPromoters_curated.bed
+Bival_Promoters_CNCC=~/Data/Katie_high_level_analysis_Oct2019/Additional_annotations/CNCC_hg38_bivalentPromoters.bed
+Bival_Promoters_NSC=~/Data/Katie_high_level_analysis_Oct2019/Additional_annotations/NSC_hg38_bivalentPromoters.bed
+
+cd ~/reference_genomes/epigenetic_annotations_stem_cells
+grep H3K4me3 Rada_Iglesias_lifted_hg38.bed | sortBed -i - | mergeBed -i - > Rada_Iglesias_lifted_hg38.H3K4me3.bed
+grep H3K27me3 Rada_Iglesias_lifted_hg38.bed | sortBed -i - | mergeBed -i -  > Rada_Iglesias_lifted_hg38.H3K27me3.bed
+grep K4me3 CNCC_annotations_hg38_no_.bed | sortBed -i - | mergeBed -i -  > CNCC_annotations_hg38_no_.H3K4me3.bed
+grep K27me3 CNCC_annotations_hg38_no_.bed | sortBed -i - | mergeBed -i - > CNCC_annotations_hg38_no_.H3K27me3.bed
+grep H3K4me3 encodeH1_histone_released_H3histMark_hg38_no_.bed | sortBed -i - | mergeBed -i - > encodeH1_histone_released_H3histMark_hg38_no_.H3K4me3.bed
+grep H3K27me3 encodeH1_histone_released_H3histMark_hg38_no_.bed | sortBed -i - | mergeBed -i - > encodeH1_histone_released_H3histMark_hg38_no_.H3K27me3.bed
+
+# annotate promoters for K4, K27 and bivalent
+
+sbatch --mem 12G --wrap " bedtools annotate -i $promoter_1kb -files $Bival_Promoters_ESC Rada_Iglesias_lifted_hg38.H3K4me3.bed Rada_Iglesias_lifted_hg38.H3K27me3.bed $Bival_Promoters_CNCC CNCC_annotations_hg38_no_.H3K4me3.bed CNCC_annotations_hg38_no_.H3K27me3.bed $Bival_Promoters_NSC encodeH1_histone_released_H3histMark_hg38_no_.H3K4me3.bed encodeH1_histone_released_H3histMark_hg38_no_.H3K27me3.bed -names ESC_bival ESC_H3K4me3 ESC_H3K27me3 CNCC_bival CNCC_H3K4me3 CNCC_H3K27me3 NSC_bival NSC_H3K4me3 NSC_H3K27me3  -counts > Promoters_annotated_For_epigenetic_marks.bed"
+
+####################  .  ####################  .  ####################  .  ####################  .  ####################
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2
+
+# common between 3 sets
+multiIntersectBed -i *bio2out3.bed | awk '{if ($4==3) print $0}' | sortBed -i - | mergeBed -i - | sortBed -i -  > ESC_CNCC_NSC.multi3_common.bed
+
+cd ~/Data/Katie_high_level_analysis_Oct2019/scenario1_multi2
+rm temp1 temp2
+intersectBed -a NSC.bio2out3.bed -b CNCC.bio2out3.bed -wa > temp1
+intersectBed -b NSC.bio2out3.bed -a CNCC.bio2out3.bed -wa > temp2
+cat temp1 temp2 |sortBed -i - | mergeBed -i - | sortBed -i - > NSC_CNCC_intermediate1.bed # union of intersectio of NSC and CNCC
+
+rm temp1 temp2
+intersectBed -a NSC.bio2out3.bed -b ESC.bio2out3.bed -wa > temp1
+intersectBed -b NSC.bio2out3.bed -a ESC.bio2out3.bed -wa > temp2
+cat temp1 temp2 |sortBed -i - | mergeBed -i - | sortBed -i - > NSC_ESC_intermediate2.bed # union of intersectio of NSC and ESC
+
+rm temp1 temp2
+intersectBed -a ESC.bio2out3.bed -b CNCC.bio2out3.bed -wa > temp1
+intersectBed -b ESC.bio2out3.bed -a CNCC.bio2out3.bed -wa > temp2
+cat temp1 temp2 |sortBed -i -  | mergeBed -i - | sortBed -i - > ESC_CNCC_intermediate3.bed # union of intersectio of CNCC and ESC
+
+
+ 
+
+# specific to each cell: cell line 1 minus merge of the other 2 (so one peak has to be exclusive to one case only)
+cat NSC.bio2out3.bed CNCC.bio2out3.bed | sortBed -i - |mergeBed -i - | intersectBed -a ESC.bio2out3.bed -b - -v > ESC_specific.20200421.bed
+cat ESC.bio2out3.bed CNCC.bio2out3.bed | sortBed -i - |mergeBed -i - | intersectBed -a NSC.bio2out3.bed -b - -v > NSC_specific.20200421.bed
+cat NSC.bio2out3.bed ESC.bio2out3.bed | sortBed -i - |mergeBed -i - | intersectBed -a CNCC.bio2out3.bed -b - -v > CNCC_specific.20200421.bed
+```
