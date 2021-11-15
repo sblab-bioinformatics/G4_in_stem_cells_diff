@@ -28,7 +28,7 @@ Data analysis:
     -   [**Differential biding and G4 integration with other data (RNA-seq, ATAC, external, etc..)**](./additional_G4_processing.md)
     -   [**Transcriptional variability**](./transcriptional_variability.md)
 
--   [**Image processing protocol**](.//Users/simeon01/Documents/git_repositories/G4_in_stem_cells_diff/microscopy_image_quant/ICY_microscope_image_analysis_file.protocol)
+-   [**Image processing protocol**](.//Users/simeon01/Documents/git_repositories/G4_in_stem_cells_diff/microscopy_image_quant)
 
 
 List of files used for this study:
