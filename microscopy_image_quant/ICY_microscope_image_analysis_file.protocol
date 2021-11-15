@@ -1,0 +1,322 @@
+<protocol VERSION="4">
+<blocks>
+<workflow ID="1077370523" blockType="plugins.adufour.blocks.lang.SequenceFileBatch" className="plugins.adufour.blocks.lang.SequenceFileBatch" collapsed="false" definedName="Sequence file batch" height="1046" keepsResults="true" width="1509" xLocation="0" yLocation="2">
+<blocks>
+<block ID="2122159487" blockType="plugins.adufour.projection.Projection" className="plugins.adufour.projection.Projection" collapsed="true" definedName="Intensity Projection" height="146" keepsResults="true" width="248" xLocation="251" yLocation="163">
+<variables>
+<input>
+<variable ID="input" name="Input" runtime="false" visible="true"/>
+<variable ID="projection direction" name="Project along" runtime="false" value="Z" visible="true"/>
+<variable ID="projection type" name="Projection type" runtime="false" value="SATSUM" visible="true"/>
+<variable ID="restrict to ROI" name="Restrict to ROI" runtime="false" value="false" visible="true"/>
+</input>
+<output>
+<variable ID="projection output" name="projected sequence" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1163579723" blockType="plugins.tprovoost.sequenceblocks.extract.ExtractChannel" className="plugins.tprovoost.sequenceblocks.SequenceBlocks" collapsed="true" definedName="Extract channel" height="101" keepsResults="true" width="206" xLocation="318" yLocation="316">
+<variables>
+<input>
+<variable ID="sequence" name="Sequence" runtime="false" visible="true"/>
+<variable ID="channel" name="Channel" runtime="false" value="0" visible="true"/>
+</input>
+<output>
+<variable ID="extracted" name="Extracted" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1358696085" blockType="plugins.tprovoost.sequenceblocks.extract.ExtractChannel" className="plugins.tprovoost.sequenceblocks.SequenceBlocks" collapsed="false" definedName="Extract channel" height="107" keepsResults="true" width="206" xLocation="537" yLocation="6">
+<variables>
+<input>
+<variable ID="sequence" name="Sequence" runtime="false" visible="true"/>
+<variable ID="channel" name="Channel" runtime="false" value="1" visible="true"/>
+</input>
+<output>
+<variable ID="extracted" name="Extracted" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1681461583" blockType="plugins.tprovoost.sequenceblocks.infos.GetFileName" className="plugins.tprovoost.sequenceblocks.SequenceBlocks" collapsed="true" definedName="Get file name" height="131" keepsResults="true" width="206" xLocation="6" yLocation="160">
+<variables>
+<input>
+<variable ID="sequence" name="Sequence" runtime="false" visible="true"/>
+<variable ID="folder" name="Folder" runtime="false" value="true" visible="true"/>
+<variable ID="extension" name="Extension" runtime="false" value="true" visible="true"/>
+</input>
+<output>
+<variable ID="name" name="Filename" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1550589550" blockType="plugins.adufour.blocks.tools.io.AppendFilePath" className="plugins.adufour.blocks.tools.io.AppendFilePath" collapsed="true" definedName="Append file path" height="132" keepsResults="true" width="195" xLocation="10" yLocation="200">
+<variables>
+<input>
+<variable ID="input file" name="Current file" runtime="false" type="java.lang.String" visible="true"/>
+<variable ID="remove ext." name="Remove extension" runtime="false" value="true" visible="true"/>
+<variable ID="suffix" name="Add suffix" runtime="false" value="_RoiSet.zip" visible="true"/>
+</input>
+<output>
+<variable ID="output file" name="New file" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="462978501" blockType="plugins.adufour.ij.ImportROIFromIJ" className="plugins.adufour.ij.ImportROIFromIJ" collapsed="true" definedName="Import ROI from ImageJ" height="156" keepsResults="true" width="305" xLocation="13" yLocation="248">
+<variables>
+<input>
+<variable ID="input ROI file" name="ImageJ ROI file (.zip)" runtime="false" visible="true"/>
+<variable ID="dimension" name="Dimension (if any)" runtime="false" value="Z" visible="true"/>
+</input>
+<output>
+<variable ID="ROI" name="ROI" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="704670473" blockType="plugins.tprovoost.scripteditor.scriptblock.Javascript" className="plugins.tprovoost.scripteditor.scriptblock.Javascript" collapsed="true" definedName="Javascript" height="547" keepsResults="true" width="879" xLocation="20" yLocation="286">
+<variables>
+<input>
+<variable ID="Script" name="" runtime="false" value="importClass(Packages.icy.roi.ROI2DRectangle)&#10;&#10;// get sequence and rois input&#10;seq = input0&#10;rois = input1&#10;// initialize output rois&#10;output0 = []&#10;&#10;// define rectangular region from image bounds&#10;seqRect = seq.getBounds2D()&#10;&#10;// subtract 1 from border&#10;seqRect.x++;&#10;seqRect.y++;&#10;seqRect.width -= 2;&#10;seqRect.height -= 2;&#10;&#10;// then define a ROI representing 'accepted area'&#10;roiRect = new ROI2DRectangle(seqRect)&#10;ind = 0&#10;&#10;// iterate over all ROIs&#10;for(i = 0; i &lt; rois.length; i++)&#10;{&#10;&#9;// get the ROI&#10;&#9;r = rois[i]&#10;&#9;// roi fit into 'accepted area' --&gt; add it to result&#10;&#9;if (roiRect.contains(r))&#10;&#9;&#9;output0[ind++] = r&#9;&#9;&#10;}" visible="true"/>
+<variable ID="Add Input" name="Add Input" runtime="false" value="1" visible="true"/>
+<variable ID="Add output" name="Add Output" runtime="false" value="0" visible="true"/>
+<variable ID="input0" name="input0" runtime="false" type="icy.sequence.Sequence" visible="true"/>
+<variable ID="558404338" name="input1" runtime="true" type="[Licy.roi.ROI;" visible="true"/>
+</input>
+<output>
+<variable ID="output0" name="output0" runtime="false" type="[Licy.roi.ROI;" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1795613007" blockType="plugins.stef.roi.bloc.op.FilterROIBySize" className="plugins.stef.roi.bloc.RoiBlocks" collapsed="false" definedName="Filter ROI by size" height="152" keepsResults="true" width="251" xLocation="370" yLocation="467">
+<variables>
+<input>
+<variable ID="roi" name="ROI(s)" runtime="false" visible="true"/>
+<variable ID="minSize" name="Min size (px)" runtime="false" value="5000.0" visible="true"/>
+<variable ID="maxSize" name="Max size (px)" runtime="false" value="200000.0" visible="true"/>
+<variable ID="incBorder" name="Include border pixels" runtime="false" value="false" visible="true"/>
+</input>
+<output>
+<variable ID="out" name="ROI(s)" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1101966579" blockType="plugins.adufour.morphology.FillHolesInROI" className="plugins.adufour.morphology.FillHolesInROI" collapsed="true" definedName="Fill holes in ROI" height="158" keepsResults="true" width="201" xLocation="27" yLocation="437">
+<variables>
+<input>
+<variable ID="List of ROI" name="List of ROI" runtime="false" visible="true"/>
+</input>
+<output>
+<variable ID="List of hole-filled ROI" name="List of hole-filled ROI" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1188983567" blockType="plugins.tprovoost.sequenceblocks.add.AddRois" className="plugins.tprovoost.sequenceblocks.SequenceBlocks" collapsed="true" definedName="Add rois" height="116" keepsResults="true" width="246" xLocation="33" yLocation="394">
+<variables>
+<input>
+<variable ID="sequence" name="Sequence" runtime="false" visible="true"/>
+<variable ID="rois(s)" name="Roi(s)" runtime="false" visible="true"/>
+<variable ID="remove" name="Remove previous" runtime="false" value="false" visible="true"/>
+</input>
+<output/>
+</variables>
+</block>
+<block ID="2072455155" blockType="plugins.adufour.blocks.tools.Display" className="plugins.adufour.blocks.tools.Display" collapsed="false" definedName="Display" height="222" keepsResults="true" width="200" xLocation="32" yLocation="477">
+<variables>
+<input>
+<variable ID="object" name="object" runtime="false" type="icy.sequence.Sequence" visible="true"/>
+</input>
+<output/>
+</variables>
+</block>
+<block ID="1389069093" blockType="plugins.adufour.roi.ROIMeasures" className="plugins.adufour.roi.ROIMeasures" collapsed="false" definedName="ROI Statistics" height="128" keepsResults="true" width="253" xLocation="1132" yLocation="97">
+<variables>
+<input>
+<variable ID="measures" name="Select features..." runtime="false" value="1110249046031" visible="true"/>
+<variable ID="Regions of interest" name="Regions of interest" runtime="false" visible="true"/>
+<variable ID="Sequence" name="Sequence" runtime="false" visible="true"/>
+</input>
+<output>
+<variable ID="Workbook" name="Workbook" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="284125715" blockType="plugins.adufour.blocks.tools.io.WorkbookToFile" className="plugins.adufour.blocks.tools.io.WorkbookToFile" collapsed="true" definedName="Workbook to file" height="503" keepsResults="true" width="637" xLocation="2389" yLocation="563">
+<variables>
+<input>
+<variable ID="workbook" name="workbook" runtime="false" value="" visible="true"/>
+<variable ID="file format" name="file format" runtime="false" value="Spreadsheet" visible="true"/>
+<variable ID="output file" name="output file" runtime="false" value="" visible="true"/>
+<variable ID="If file exists" name="If file exists" runtime="false" value="Merge_sheets___excluding_first_row" visible="true"/>
+</input>
+<output/>
+</variables>
+</block>
+<block ID="1974599864" blockType="plugins.adufour.blocks.tools.io.GetSequenceFolder" className="plugins.adufour.blocks.tools.io.GetSequenceFolder" collapsed="true" definedName="Get sequence folder" height="83" keepsResults="true" width="212" xLocation="23" yLocation="719">
+<variables>
+<input>
+<variable ID="Sequence" name="Sequence" runtime="false" visible="true"/>
+</input>
+<output>
+<variable ID="Folder" name="Folder" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1968905023" blockType="plugins.adufour.blocks.tools.io.AppendFilePath" className="plugins.adufour.blocks.tools.io.AppendFilePath" collapsed="true" definedName="Append file path" height="132" keepsResults="true" width="375" xLocation="23" yLocation="758">
+<variables>
+<input>
+<variable ID="input file" name="Current file" runtime="false" type="java.io.File" visible="true"/>
+<variable ID="remove ext." name="Remove extension" runtime="false" value="false" visible="true"/>
+<variable ID="suffix" name="Add suffix" runtime="false" value="/method1_nuclei_intensity.xls" visible="true"/>
+</input>
+<output>
+<variable ID="output file" name="New file" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1847766201" blockType="plugins.adufour.blocks.tools.io.WorkbookToFile" className="plugins.adufour.blocks.tools.io.WorkbookToFile" collapsed="false" definedName="Workbook to file" height="273" keepsResults="true" width="306" xLocation="1128" yLocation="393">
+<variables>
+<input>
+<variable ID="workbook" name="workbook" runtime="false" visible="true"/>
+<variable ID="file format" name="file format" runtime="false" value="Spreadsheet" visible="true"/>
+<variable ID="output file" name="output file" runtime="false" visible="true"/>
+<variable ID="If file exists" name="If file exists" runtime="false" value="Overwrite" visible="true"/>
+</input>
+<output/>
+</variables>
+</block>
+<block ID="2004372070" blockType="plugins.adufour.blocks.tools.ij.SequenceToImagePlus" className="plugins.adufour.blocks.tools.ij.SequenceToImagePlus" collapsed="false" definedName="Sequence to image plus" height="83" keepsResults="true" width="251" xLocation="538" yLocation="136">
+<variables>
+<input>
+<variable ID="Icy Sequence" name="Icy Sequence" runtime="false" visible="true"/>
+</input>
+<output>
+<variable ID="IJ ImagePlus" name="ImagePlus" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1773586149" blockType="plugins.adufour.blocks.tools.ij.CallIJPlugin" className="plugins.adufour.blocks.tools.ij.CallIJPlugin" collapsed="false" definedName="Call IJ plugin" height="133" keepsResults="true" width="298" xLocation="559" yLocation="233">
+<variables>
+<input>
+<variable ID="Input ImagePlus" name="Input ImagePlus" runtime="false" visible="true"/>
+<variable ID="ImageJ plug-in name" name="plug-in name" runtime="false" value="Subtract Background..." visible="true"/>
+<variable ID="ImageJ plug-in parameters" name="parameters" runtime="false" value="rolling=20" visible="true"/>
+</input>
+<output>
+<variable ID="Output ImagePlus" name="Output (active) ImagePlus" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+<block ID="1068349981" blockType="plugins.adufour.blocks.tools.ij.ImagePlusToSequence" className="plugins.adufour.blocks.tools.ij.ImagePlusToSequence" collapsed="false" definedName="Image plus to sequence" height="83" keepsResults="true" width="251" xLocation="617" yLocation="378">
+<variables>
+<input>
+<variable ID="IJ ImagePlus" name="IJ ImagePlus" runtime="false" visible="true"/>
+</input>
+<output>
+<variable ID="Icy Sequence" name="Icy Sequence" runtime="false" visible="true"/>
+</output>
+</variables>
+</block>
+</blocks>
+<links>
+<link dstBlockID="2122159487" dstVarID="input" srcBlockID="1077370523" srcVarID="Sequence"/>
+<link dstBlockID="1681461583" dstVarID="sequence" srcBlockID="1077370523" srcVarID="Sequence"/>
+<link dstBlockID="1974599864" dstVarID="Sequence" srcBlockID="1077370523" srcVarID="Sequence"/>
+<link dstBlockID="1358696085" dstVarID="sequence" srcBlockID="2122159487" srcVarID="projection output"/>
+<link dstBlockID="1163579723" dstVarID="sequence" srcBlockID="2122159487" srcVarID="projection output"/>
+<link dstBlockID="1389069093" dstVarID="Sequence" srcBlockID="2122159487" srcVarID="projection output"/>
+<link dstBlockID="704670473" dstVarID="input0" srcBlockID="1163579723" srcVarID="extracted"/>
+<link dstBlockID="1188983567" dstVarID="sequence" srcBlockID="1163579723" srcVarID="extracted"/>
+<link dstBlockID="1550589550" dstVarID="input file" srcBlockID="1681461583" srcVarID="name"/>
+<link dstBlockID="462978501" dstVarID="input ROI file" srcBlockID="1550589550" srcVarID="output file"/>
+<link dstBlockID="704670473" dstVarID="558404338" srcBlockID="462978501" srcVarID="ROI"/>
+<link dstBlockID="1795613007" dstVarID="roi" srcBlockID="704670473" srcVarID="output0" srcVarType="[Licy.roi.ROI;"/>
+<link dstBlockID="1101966579" dstVarID="List of ROI" srcBlockID="1795613007" srcVarID="out"/>
+<link dstBlockID="1389069093" dstVarID="Regions of interest" srcBlockID="1795613007" srcVarID="out"/>
+<link dstBlockID="1188983567" dstVarID="rois(s)" srcBlockID="1101966579" srcVarID="List of hole-filled ROI"/>
+<link dstBlockID="2072455155" dstVarID="object" srcBlockID="1188983567" srcVarID="sequence"/>
+<link dstBlockID="1847766201" dstVarID="workbook" srcBlockID="1389069093" srcVarID="Workbook"/>
+<link dstBlockID="1968905023" dstVarID="input file" srcBlockID="1974599864" srcVarID="Folder"/>
+<link dstBlockID="1847766201" dstVarID="output file" srcBlockID="1968905023" srcVarID="output file"/>
+<link dstBlockID="2004372070" dstVarID="Icy Sequence" srcBlockID="1358696085" srcVarID="extracted"/>
+<link dstBlockID="1773586149" dstVarID="Input ImagePlus" srcBlockID="2004372070" srcVarID="IJ ImagePlus"/>
+<link dstBlockID="1068349981" dstVarID="IJ ImagePlus" srcBlockID="1773586149" srcVarID="Output ImagePlus"/>
+</links>
+<variables>
+<input>
+<variable ID="folder" blockID="1077370523" value="C:\Users\User\Desktop\test3\DNASe" visible="true"/>
+<variable ID="extension" blockID="1077370523" value=".lif" visible="true"/>
+<variable ID="Include sub-folders" blockID="1077370523" value="true" visible="true"/>
+<variable ID="2122159487:input" blockID="2122159487" value="No Sequence" visible="false"/>
+<variable ID="2122159487:projection direction" blockID="2122159487" value="Z" visible="false"/>
+<variable ID="2122159487:projection type" blockID="2122159487" value="SATSUM" visible="false"/>
+<variable ID="2122159487:restrict to ROI" blockID="2122159487" value="false" visible="false"/>
+<variable ID="1163579723:sequence" blockID="1163579723" value="No Sequence" visible="false"/>
+<variable ID="1163579723:channel" blockID="1163579723" value="0" visible="false"/>
+<variable ID="1358696085:sequence" blockID="1358696085" value="No Sequence" visible="false"/>
+<variable ID="1358696085:channel" blockID="1358696085" value="1" visible="false"/>
+<variable ID="1681461583:sequence" blockID="1681461583" value="No Sequence" visible="false"/>
+<variable ID="1681461583:folder" blockID="1681461583" value="true" visible="false"/>
+<variable ID="1681461583:extension" blockID="1681461583" value="true" visible="false"/>
+<variable ID="1550589550:input file" blockID="1550589550" value="" visible="false"/>
+<variable ID="1550589550:remove ext." blockID="1550589550" value="true" visible="false"/>
+<variable ID="1550589550:suffix" blockID="1550589550" value="_RoiSet.zip" visible="false"/>
+<variable ID="462978501:input ROI file" blockID="462978501" value="" visible="false"/>
+<variable ID="462978501:dimension" blockID="462978501" value="Z" visible="false"/>
+<variable ID="704670473:Script" blockID="704670473" value="importClass(Packages.icy.roi.ROI2DRectangle)&#10;&#10;// get sequence and rois input&#10;seq = input0&#10;rois = input1&#10;// initialize output rois&#10;output0 = []&#10;&#10;// define rectangular region from image bounds&#10;seqRect = seq.getBounds2D()&#10;&#10;// subtract 1 from border&#10;seqRect.x++;&#10;seqRect.y++;&#10;seqRect.width -= 2;&#10;seqRect.height -= 2;&#10;&#10;// then define a ROI representing 'accepted area'&#10;roiRect = new ROI2DRectangle(seqRect)&#10;ind = 0&#10;&#10;// iterate over all ROIs&#10;for(i = 0; i &lt; rois.length; i++)&#10;{&#10;&#9;// get the ROI&#10;&#9;r = rois[i]&#10;&#9;// roi fit into 'accepted area' --&gt; add it to result&#10;&#9;if (roiRect.contains(r))&#10;&#9;&#9;output0[ind++] = r&#9;&#9;&#10;}" visible="false"/>
+<variable ID="704670473:Add Input" blockID="704670473" value="1" visible="false"/>
+<variable ID="704670473:Add output" blockID="704670473" value="0" visible="false"/>
+<variable ID="704670473:input0" blockID="704670473" value="" visible="false"/>
+<variable ID="704670473:558404338" blockID="704670473" value="" visible="false"/>
+<variable ID="1795613007:roi" blockID="1795613007" value="No ROI" visible="false"/>
+<variable ID="1795613007:minSize" blockID="1795613007" value="5000.0" visible="false"/>
+<variable ID="1795613007:maxSize" blockID="1795613007" value="200000.0" visible="false"/>
+<variable ID="1795613007:incBorder" blockID="1795613007" value="false" visible="false"/>
+<variable ID="1101966579:List of ROI" blockID="1101966579" value="No ROI" visible="false"/>
+<variable ID="1188983567:sequence" blockID="1188983567" value="No Sequence" visible="false"/>
+<variable ID="1188983567:rois(s)" blockID="1188983567" value="No ROI" visible="false"/>
+<variable ID="1188983567:remove" blockID="1188983567" value="false" visible="false"/>
+<variable ID="2072455155:object" blockID="2072455155" value="" visible="false"/>
+<variable ID="1389069093:measures" blockID="1389069093" value="1110249046031" visible="false"/>
+<variable ID="1389069093:Regions of interest" blockID="1389069093" value="No ROI" visible="false"/>
+<variable ID="1389069093:Sequence" blockID="1389069093" value="No Sequence" visible="false"/>
+<variable ID="284125715:workbook" blockID="284125715" value="" visible="false"/>
+<variable ID="284125715:file format" blockID="284125715" value="Spreadsheet" visible="false"/>
+<variable ID="284125715:output file" blockID="284125715" value="" visible="false"/>
+<variable ID="284125715:If file exists" blockID="284125715" value="Merge_sheets___excluding_first_row" visible="false"/>
+<variable ID="1974599864:Sequence" blockID="1974599864" value="No Sequence" visible="false"/>
+<variable ID="1968905023:input file" blockID="1968905023" value="" visible="false"/>
+<variable ID="1968905023:remove ext." blockID="1968905023" value="false" visible="false"/>
+<variable ID="1968905023:suffix" blockID="1968905023" value="/method1_nuclei_intensity.xls" visible="false"/>
+<variable ID="1847766201:workbook" blockID="1847766201" value="" visible="false"/>
+<variable ID="1847766201:file format" blockID="1847766201" value="Spreadsheet" visible="false"/>
+<variable ID="1847766201:output file" blockID="1847766201" value="" visible="false"/>
+<variable ID="1847766201:If file exists" blockID="1847766201" value="Overwrite" visible="false"/>
+<variable ID="2004372070:Icy Sequence" blockID="2004372070" value="No Sequence" visible="false"/>
+<variable ID="1773586149:Input ImagePlus" blockID="1773586149" value="" visible="false"/>
+<variable ID="1773586149:ImageJ plug-in name" blockID="1773586149" value="Subtract Background..." visible="false"/>
+<variable ID="1773586149:ImageJ plug-in parameters" blockID="1773586149" value="rolling=20" visible="false"/>
+<variable ID="1068349981:IJ ImagePlus" blockID="1068349981" value="" visible="false"/>
+</input>
+<output>
+<variable ID="iteration" blockID="1077370523" visible="true"/>
+<variable ID="Sequence" blockID="1077370523" visible="true"/>
+<variable ID="2122159487:projection output" blockID="2122159487" visible="false"/>
+<variable ID="1163579723:extracted" blockID="1163579723" visible="false"/>
+<variable ID="1358696085:extracted" blockID="1358696085" visible="false"/>
+<variable ID="1681461583:name" blockID="1681461583" visible="false"/>
+<variable ID="1550589550:output file" blockID="1550589550" visible="false"/>
+<variable ID="462978501:ROI" blockID="462978501" visible="false"/>
+<variable ID="704670473:output0" blockID="704670473" visible="false"/>
+<variable ID="1795613007:out" blockID="1795613007" visible="false"/>
+<variable ID="1101966579:List of hole-filled ROI" blockID="1101966579" visible="false"/>
+<variable ID="1389069093:Workbook" blockID="1389069093" visible="false"/>
+<variable ID="1974599864:Folder" blockID="1974599864" visible="false"/>
+<variable ID="1968905023:output file" blockID="1968905023" visible="false"/>
+<variable ID="2004372070:IJ ImagePlus" blockID="2004372070" visible="false"/>
+<variable ID="1773586149:Output ImagePlus" blockID="1773586149" visible="false"/>
+<variable ID="1068349981:Icy Sequence" blockID="1068349981" visible="false"/>
+</output>
+</variables>
+</workflow>
+</blocks>
+<links/>
+</protocol>
